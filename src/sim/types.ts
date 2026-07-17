@@ -33,6 +33,8 @@ export interface PlayerCore {
   prevButtons: number; // for jump edge detection
   lastHitBy: number; // KO credit: -1 or the last attacker...
   lastHitTick: number; // ...within the credit window
+  lastCmdSeq: number; // newest UserCmd folded in — the client's prediction replay point
+  lagTicks: number; // hitscan lag-compensation rewind for this shooter (host-set)
 }
 
 export const PROJ = { ROCKET: 0, NUKE: 1 } as const;

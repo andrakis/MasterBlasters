@@ -18,6 +18,9 @@ export interface FireCtx {
   tick: number;
   friendlyFire: boolean;
   nextId: () => number;
+  /** Lag compensation: where `q` stood `lagTicks` ago (world position history).
+   *  Absent in unit tests — hitscan then tests live positions. */
+  rewind?: (q: PlayerCore, lagTicks: number) => { x: number; y: number; z: number };
 }
 
 const SNIPER_RANGE = 200;
@@ -72,9 +75,12 @@ export function tryFire(p: PlayerCore, ctx: FireCtx): void {
     let hit: PlayerCore | null = null;
     for (const q of ctx.players) {
       if (!canHurt(p, q, ctx.friendlyFire)) continue;
+      // HL2-style lag compensation: test the capsule where the SHOOTER saw it —
+      // rewound by their latency + interpolation delay (host-measured)
+      const at = ctx.rewind && p.lagTicks > 0 ? ctx.rewind(q, p.lagTicks) : q;
       const t = rayVsCapsule(
         p.x, eyeY, p.z, dir.x, dir.y, dir.z, tBest,
-        q.x, q.y, q.z, T.PLAYER_R, T.PLAYER_H,
+        at.x, at.y, at.z, T.PLAYER_R, T.PLAYER_H,
       );
       if (t < tBest) { tBest = t; hit = q; }
     }

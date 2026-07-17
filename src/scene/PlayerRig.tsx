@@ -8,10 +8,10 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { TUNING as T, WEAPONS } from '../config.ts';
 import { BTN, type UserCmd } from '../protocol.ts';
-import { integrateBody, type BodyState } from '../sim/movement.ts';
+import { integrateBody, type BodyState, type MoveInput } from '../sim/movement.ts';
 import { rayVsBoxes } from '../sim/collision.ts';
 import type { Box, MapDef } from '../sim/maps/types.ts';
-import { getAuthoritativeLocal, sendCmd } from '../simClient.ts';
+import { getAuthoritativeLocal, getNetRole, prunePendingCmds, sendCmd } from '../simClient.ts';
 import { useStore } from '../store.ts';
 import { stepShake } from './shake.ts';
 import { Viewmodel } from './Viewmodel.tsx';
@@ -25,6 +25,7 @@ const SNAP_DIST = 4; // respawns and teleport-sized errors snap instead of glide
 
 const TP_OFFSET = new THREE.Vector3(0.65, 0.55, 3.4);
 const BASE_FOV = 75;
+const TICK_DT = 1 / 60;
 
 interface Keys { f: boolean; b: boolean; l: boolean; r: boolean; space: boolean }
 
@@ -45,6 +46,11 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
   const wasAlive = useRef(true);
   const scratchDir = useRef(new THREE.Vector3());
   const scratchOff = useRef(new THREE.Vector3());
+  // client-mode prediction: last snapshot tick we rebased from, plus a visual
+  // smoothing offset that soaks up rebase pops (decays over ~80 ms)
+  const lastAuthTick = useRef(-1);
+  const smooth = useRef({ x: 0, y: 0, z: 0 });
+  const replayInput = useRef<MoveInput>({ moveX: 0, moveZ: 0, jumpEdge: false, jetHeld: false });
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -57,7 +63,8 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
       if (!locked.current) {
         keys.current = { f: false, b: false, l: false, r: false, space: false };
         lmb.current = false;
-        sendCmd({ seq: ++seq.current, buttons: 0, moveX: 0, moveZ: 0, yaw: yaw.current, pitch: pitch.current, weapon: -1 });
+        seq.current = (seq.current + 1) & 0xffff;
+        sendCmd({ seq: seq.current, buttons: 0, moveX: 0, moveZ: 0, yaw: yaw.current, pitch: pitch.current, weapon: -1 });
       }
     };
     const onMouseMove = (e: MouseEvent) => {
@@ -166,8 +173,10 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
     if (lmb.current) buttons |= BTN.FIRE;
 
     if (locked.current && store.matchLive) {
+      seq.current = (seq.current + 1) & 0xffff; // u16 on the wire
+      if (seq.current === 0) seq.current = 1;
       const cmd: UserCmd = {
-        seq: ++seq.current,
+        seq: seq.current,
         buttons,
         moveX,
         moveZ,
@@ -182,38 +191,86 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
     // --- prediction + reconciliation -------------------------------------------
     const auth = getAuthoritativeLocal();
     const alive = auth?.alive ?? true;
+    const role = getNetRole();
     if (auth && alive) {
+      const b = body.current;
       if (!wasAlive.current) {
         // respawn: teleport, don't glide across the map
-        body.current.x = auth.x; body.current.y = auth.y; body.current.z = auth.z;
-        body.current.vx = auth.vx; body.current.vy = auth.vy; body.current.vz = auth.vz;
+        b.x = auth.x; b.y = auth.y; b.z = auth.z;
+        b.vx = auth.vx; b.vy = auth.vy; b.vz = auth.vz;
+        smooth.current.x = 0; smooth.current.y = 0; smooth.current.z = 0;
       }
+
+      if (role === 'client' && auth.tick !== lastAuthTick.current) {
+        // HL2-style prediction: rebase on the fresh snapshot, then replay every
+        // cmd the host hasn't folded in yet through the SAME integrator
+        lastAuthTick.current = auth.tick;
+        const beforeX = b.x;
+        const beforeY = b.y;
+        const beforeZ = b.z;
+        b.x = auth.x; b.y = auth.y; b.z = auth.z;
+        b.vx = auth.vx; b.vy = auth.vy; b.vz = auth.vz;
+        b.grounded = auth.grounded;
+        b.jetting = auth.jetting;
+        b.energy = auth.energy;
+        b.kbLockT = 0;
+        const pending = prunePendingCmds(auth.cmdSeq);
+        let prevBtns = 0;
+        for (const c of pending) {
+          const ri = replayInput.current;
+          ri.moveX = c.moveX;
+          ri.moveZ = c.moveZ;
+          ri.jumpEdge = (c.buttons & BTN.JUMP) !== 0 && (prevBtns & BTN.JUMP) === 0;
+          ri.jetHeld = (c.buttons & BTN.JET) !== 0;
+          integrateBody(b, ri, TICK_DT, boxes, map.gravityMult ?? 1);
+          prevBtns = c.buttons;
+        }
+        // soak the rebase pop into a decaying render-only offset
+        const ex = beforeX - b.x;
+        const ey = beforeY - b.y;
+        const ez = beforeZ - b.z;
+        if (Math.hypot(ex, ey, ez) < SNAP_DIST) {
+          smooth.current.x += ex;
+          smooth.current.y += ey;
+          smooth.current.z += ez;
+        }
+      }
+
       const jumpEdge = k.space && !prevSpace.current;
       integrateBody(
-        body.current,
+        b,
         { moveX, moveZ, jumpEdge, jetHeld: k.space },
         dt,
         boxes,
         map.gravityMult ?? 1,
       );
-      const b = body.current;
-      const err = Math.hypot(auth.x - b.x, auth.y - b.y, auth.z - b.z);
-      if (err > SNAP_DIST) {
-        b.x = auth.x; b.y = auth.y; b.z = auth.z;
-        b.vx = auth.vx; b.vy = auth.vy; b.vz = auth.vz;
-      } else {
-        const t = Math.min(1, RECONCILE_RATE * dt);
-        b.x += (auth.x - b.x) * t;
-        b.y += (auth.y - b.y) * t;
-        b.z += (auth.z - b.z) * t;
-        b.vx += (auth.vx - b.vx) * t;
-        b.vy += (auth.vy - b.vy) * t;
-        b.vz += (auth.vz - b.vz) * t;
+
+      if (role !== 'client') {
+        // local/host: the worker answers within a frame — lerp toward it
+        const err = Math.hypot(auth.x - b.x, auth.y - b.y, auth.z - b.z);
+        if (err > SNAP_DIST) {
+          b.x = auth.x; b.y = auth.y; b.z = auth.z;
+          b.vx = auth.vx; b.vy = auth.vy; b.vz = auth.vz;
+        } else {
+          const t = Math.min(1, RECONCILE_RATE * dt);
+          b.x += (auth.x - b.x) * t;
+          b.y += (auth.y - b.y) * t;
+          b.z += (auth.z - b.z) * t;
+          b.vx += (auth.vx - b.vx) * t;
+          b.vy += (auth.vy - b.vy) * t;
+          b.vz += (auth.vz - b.vz) * t;
+        }
+        b.energy = auth.energy; // sim-owned meter; prediction only moves the body
       }
-      b.energy = auth.energy; // sim-owned meter; prediction only moves the body
     }
     wasAlive.current = alive;
     prevSpace.current = k.space;
+    // decay the client smoothing offset
+    const sm = smooth.current;
+    const decay = Math.exp(-12 * dt);
+    sm.x *= decay;
+    sm.y *= decay;
+    sm.z *= decay;
 
     // --- camera -------------------------------------------------------------------
     const shake = stepShake(dt);
@@ -225,9 +282,9 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
     camera.rotation.set(pitch.current, yaw.current, 0);
 
     const b = body.current;
-    const eyeX = b.x;
-    const eyeY = b.y + T.EYE_HEIGHT;
-    const eyeZ = b.z;
+    const eyeX = b.x + sm.x;
+    const eyeY = b.y + sm.y + T.EYE_HEIGHT;
+    const eyeZ = b.z + sm.z;
     if (store.camMode === 'fp') {
       camera.position.set(eyeX, eyeY, eyeZ);
     } else {

@@ -25,14 +25,22 @@
 - Bot Gunslinger difficulty as the default sparring partner
 - Crusher sweeper speeds; moontop gravity 0.55
 
-## Phase 2 — multiplayer (design in TECH §3; seams already in place)
+## Phase 2 — multiplayer (SHIPPED; details in TECH §3)
 
-1. Snapshot codec: quantize + delta the `*Core` structs; codec round-trip test
-2. Signaling route on `server/index.js` (rooms, SDP/ICE relay)
-3. Two DataChannels per peer; host loop feeding remote cmds into `World`
-4. Client: prediction replay ring + 100 ms interpolation buffers
-5. Host-side lag compensation for the sniper
-6. Lobby UI (host/join, room codes), host migration (later)
+- ✔ Binary snapshot codec (30 B/player @ 20 Hz ≈ 2-3 KB/s measured) + round-trip tests
+- ✔ Signaling: `/signal` WS on Vite dev AND Express prod (rooms, 4-letter codes)
+- ✔ Two DataChannels per peer; peer cmds + RTT-derived lag ticks fed into the worker
+- ✔ Client prediction replay ring over the shared integrator + rebase smoothing
+- ✔ Host-side lag-compensated sniper (64-tick position history rewind)
+- ✔ Lobby UI: host/join by code, live roster, host-started matches, rematch from lobby
+- Verified end-to-end: two headless browsers over real WebRTC — client input moves
+  the player in the host's sim, projectiles/scores/kill-feed sync, zero errors
+
+### Phase 2 backlog
+- Host migration when the host leaves (today: everyone returns to the menu)
+- Delta-compressed snapshots vs last-acked (bandwidth is already comfortable)
+- Mid-match joiners spawn into the round (today they spectate until a rematch)
+- Removing a disconnected peer's body from the round (today it idles until KO'd)
 
 ## Phase 2.5 — polish
 

@@ -8,7 +8,8 @@ Context for Claude when working on this project. Read `docs/DESIGN.md` and
 name, which the project owner (Daedalus/Julian) helped build. Quake rocket combat ×
 Super Smash Bros ring-outs, first-person: floating platforms over a void, damage
 never kills (it scales knockback), a recharging jetpack flies you home, stock-based
-rounds. v1 is local-vs-bots; phase 2 is HL2-style netcode over WebRTC.
+rounds. Plays solo vs bots AND online: HL2-style host-authoritative snapshot
+netcode over WebRTC (rooms with 4-letter codes; TECH §3).
 
 ## Stack (locked)
 - **TypeScript · React 19 · React Three Fiber v9 (+ drei) · Vite · Express**,
@@ -30,19 +31,26 @@ function locally and reconciles toward each worker frame. The shared integrator 
 **`src/sim/movement.ts`** — the worker and the shim both call it; never fork it.
 Camera rotation is render-only; the yaw/pitch on a cmd is aim, an input.
 
-## The netcode seams (phase 2 is transport-only; do not break these)
+## The netcode invariants (LIVE — do not break these)
 HL2-style host-authoritative snapshots over WebRTC unreliable DataChannels — NOT
-lockstep. What that requires of today's code:
-1. `protocol.ts` defines `UserCmd` (~10 B quantized) and the `Snapshot` shape.
+lockstep. `simClient.ts` runs one of three roles: `local` (worker only), `host`
+(worker + snapshot fan-out via `net/host.ts`), `client` (no sim — snapshots from
+`net/client.ts` rebuilt into Frames). Rules that keep it working:
+1. `protocol.ts` owns the wire: 10 B `UserCmd`s, ~30 B/player snapshots
+   (`encodeSnapshot`/`decodeSnapshot`). New replicated fields = codec + `STRIDE` +
+   `P` offsets + `pack()` together, plus the codec round-trip test.
 2. `sim/types.ts` splits **replicated** (`*Core`) from **host-only** (BotState,
    DropDirector, RNGs) state. New fields go on the correct side.
-3. `sim/movement.ts` stays pure `(state, input, dt, boxes)` — it IS the future
-   client-side prediction code.
-4. Seeded RNG streams only (`math.ts makePrng/deriveSeed`) — not for cross-machine
+3. `sim/movement.ts` stays pure `(state, input, dt, boxes)` — the worker, the
+   host-mode shim, AND client prediction replay all call it. Never fork it.
+4. All intent enters the sim as a `UserCmd` keyed by playerId (the host stamps
+   remote peers'). Never bypass that seam.
+5. Seeded RNG streams only (`math.ts makePrng/deriveSeed`) — not for cross-machine
    sync (snapshots make desync impossible) but for reproducible tests/replays;
    `test/replay.test.ts` enforces it. No `Math.random` in sim scope.
-5. Movers are pure functions of tick (`maps/types.ts updateMovers`) so clients can
+6. Movers are pure functions of tick (`maps/types.ts updateMovers`) so clients can
    render them without replication.
+7. The renderer/HUD stay role-blind: they read Frames via simClient getters only.
 
 ## Other invariants
 - `src/config.ts` is the single source of truth for tuning (knockback formula
@@ -83,7 +91,12 @@ src/sim/modes.ts       LMS / Masters-vs-Blasters / Timed as ModeRules
 src/sim/ai/bot.ts      fight/collect/edgeGuard/recover; tiers = parameters
 src/sim/maps/          MapDef schema + testArena, moontop, crusher, quake, hyrule
 src/sim.worker.ts      fixed-tick scheduler + command queue ONLY
-src/simClient.ts       frames, interpolation getters, event routing, cmd senders
+src/simClient.ts       the role hub (local/host/client): frames, interpolation
+                       getters, event routing, cmd senders, lobby lifecycle
+src/net/rtc.ts         peer construction, channel flavors, signaling socket
+src/net/host.ts        room ownership: slots, snapshot fan-out, RTT -> lag ticks
+src/net/client.ts      join by code, snapshot/event intake, cmd upstream
+server/signaling.js    /signal WS rooms + SDP/ICE relay (Vite dev AND Express)
 src/store.ts           zustand: menu settings, HUD mirrors, feed, banner
 src/scene/             Scene, MapMesh, PlayerRig (FP/TP + shim), Players,
                        Viewmodel, Projectiles, Pickups, Effects, FpsMeter, shake

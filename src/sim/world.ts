@@ -26,7 +26,10 @@ import { tryFire, type FireCtx } from './weapons.ts';
 
 export type Command =
   | ({ type: 'config' } & MatchSettings)
-  | { type: 'input'; cmd: UserCmd };
+  | { type: 'input'; cmd: UserCmd; playerId?: number } // playerId stamped by the host for remote peers
+  | { type: 'lag'; playerId: number; ticks: number }; // hitscan rewind for that shooter
+
+const HISTORY = 64; // ticks of position history (> LAG_COMP_MAX_TICKS)
 
 const TICK_DT = 1 / CFG.TICK_HZ;
 const KO_CREDIT_TICKS = 5 * CFG.TICK_HZ;
@@ -69,8 +72,10 @@ export class World {
     wins: new Map(),
   };
 
-  humanCmd: UserCmd = { ...NEUTRAL_CMD };
+  humanCmds = new Map<number, UserCmd>();
   events: SimEvent[] = [];
+  // rolling position history for lag-compensated hitscan (x,y,z per player per tick)
+  private posHistory = new Float32Array(CFG.MAX_PLAYERS * HISTORY * 3);
 
   // one PRNG stream per subsystem: drops, AI, spawn tiebreaks
   rngDrops: Prng;
@@ -78,6 +83,7 @@ export class World {
   rngSpawns: Prng;
 
   private idCounter = 1;
+  private matchStartTick = 0;
   private moveInput: MoveInput = { moveX: 0, moveZ: 0, jumpEdge: false, jetHeld: false };
 
   constructor(seed: number) {
@@ -93,9 +99,12 @@ export class World {
 
   apply(cmd: Command): void {
     if (cmd.type === 'input') {
-      this.humanCmd = cmd.cmd;
+      this.humanCmds.set(cmd.playerId ?? 0, cmd.cmd);
     } else if (cmd.type === 'config') {
       this.startMatch(cmd);
+    } else if (cmd.type === 'lag') {
+      const p = this.players[cmd.playerId];
+      if (p) p.lagTicks = Math.max(0, Math.min(CFG.LAG_COMP_MAX_TICKS, Math.round(cmd.ticks)));
     }
   }
 
@@ -110,28 +119,32 @@ export class World {
     this.map = MAPS[s.mapId] ?? MAPS.mb_test;
     this.boxes = makeBoxes(this.map);
     this.mode = MODES[s.mode];
-    this.humanCmd = { ...NEUTRAL_CMD };
+    this.humanCmds.clear();
+
+    // roster: explicit in multiplayer (slot 0 = host); synthesized solo otherwise
+    const roster =
+      s.roster ??
+      [{ name: 'You', bot: false }, ...Array.from({ length: s.botCount }, () => ({ name: '', bot: true }))];
 
     this.players = [];
     this.botStates.clear();
-    const n = Math.min(1 + s.botCount, CFG.MAX_PLAYERS);
+    const n = Math.min(roster.length, CFG.MAX_PLAYERS);
     let ninjas = 0;
     let cowboys = 0;
     for (let slot = 0; slot < n; slot++) {
+      const entry = roster[slot];
       const team = this.mode.assignTeam(slot);
-      const bot = slot > 0;
       // team mode: even team = Masters (ninjas); FFA: alternate flavor by slot
       const ninja = this.mode.id === 'team' ? team === 0 : slot % 2 === 0;
-      const name = !bot
-        ? 'You'
-        : ninja
-          ? NINJA_NAMES[ninjas++ % NINJA_NAMES.length]
-          : COWBOY_NAMES[cowboys++ % COWBOY_NAMES.length];
-      this.players.push(this.makePlayer(slot, team, bot, name, ninja));
-      if (bot) this.botStates.set(slot, makeBotState(s.botTier));
+      const name =
+        entry.name ||
+        (ninja ? NINJA_NAMES[ninjas++ % NINJA_NAMES.length] : COWBOY_NAMES[cowboys++ % COWBOY_NAMES.length]);
+      this.players.push(this.makePlayer(slot, team, entry.bot, name, ninja));
+      if (entry.bot) this.botStates.set(slot, makeBotState(s.botTier));
     }
     this.round.wins = new Map();
     this.round.roundNumber = 0;
+    this.matchStartTick = this.tick;
     this.startRound();
   }
 
@@ -157,6 +170,8 @@ export class World {
       prevButtons: 0,
       lastHitBy: -1,
       lastHitTick: -1_000_000,
+      lastCmdSeq: 0,
+      lagTicks: 0,
     };
   }
 
@@ -262,9 +277,12 @@ export class World {
       friendlyFire: this.mode.friendlyFire,
     };
     for (const p of this.players) {
-      const cmd = p.bot ? stepBot(p, this.botStates.get(p.id)!, botCtx) : this.humanCmd;
+      const cmd = p.bot
+        ? stepBot(p, this.botStates.get(p.id)!, botCtx)
+        : this.humanCmds.get(p.id) ?? NEUTRAL_CMD;
       p.yaw = cmd.yaw;
       p.pitch = cmd.pitch;
+      p.lastCmdSeq = cmd.seq;
       if (cmd.weapon >= 0 && cmd.weapon < WEAPONS.length && p.ammo[cmd.weapon] !== 0) {
         p.weapon = cmd.weapon;
       }
@@ -286,6 +304,15 @@ export class World {
         this.moveInput.jetHeld = jetHeld;
         integrateBody(p, this.moveInput, TICK_DT, this.boxes, this.map.gravityMult ?? 1);
       }
+    }
+
+    // record post-move positions for lag-compensated hitscan rewinds
+    const hOff = (this.tick % HISTORY) * 3;
+    for (const p of this.players) {
+      const base = p.id * HISTORY * 3 + hOff;
+      this.posHistory[base] = p.x;
+      this.posHistory[base + 1] = p.y;
+      this.posHistory[base + 2] = p.z;
     }
 
     // 2) projectiles fly and explode
@@ -364,6 +391,16 @@ export class World {
     // matchEnd: hold until the menu sends a new config
   }
 
+  /** Historical position of `q`, `lagTicks` ago — the HL2-style hitscan rewind.
+   *  Falls back to the live position when the history doesn't reach that far. */
+  rewindPos(q: PlayerCore, lagTicks: number): { x: number; y: number; z: number } {
+    const back = Math.min(lagTicks, CFG.LAG_COMP_MAX_TICKS, this.tick - this.matchStartTick);
+    if (back <= 0) return q;
+    const t = this.tick - back;
+    const base = q.id * HISTORY * 3 + (((t % HISTORY) + HISTORY) % HISTORY) * 3;
+    return { x: this.posHistory[base], y: this.posHistory[base + 1], z: this.posHistory[base + 2] };
+  }
+
   private fireCtx(): FireCtx {
     return {
       players: this.players,
@@ -374,6 +411,7 @@ export class World {
       tick: this.tick,
       friendlyFire: this.mode.friendlyFire,
       nextId: () => this.idCounter++,
+      rewind: (q, lagTicks) => this.rewindPos(q, lagTicks),
     };
   }
 
@@ -387,7 +425,7 @@ export class World {
   }
 
   pack(): { msg: Record<string, unknown>; transfers: Transferable[] } {
-    const S = 22;
+    const S = 26;
     const players = new Float32Array(this.players.length * S);
     for (let i = 0; i < this.players.length; i++) {
       const p = this.players[i];
@@ -414,6 +452,10 @@ export class World {
       players[o + 19] = p.jetting ? 1 : 0;
       players[o + 20] = p.grounded ? 1 : 0;
       players[o + 21] = p.ninja ? 1 : 0;
+      players[o + 22] = p.ammo[2];
+      players[o + 23] = p.ammo[3];
+      players[o + 24] = p.alive ? 0 : Math.max(0, (p.respawnAtTick - this.tick) / CFG.TICK_HZ);
+      players[o + 25] = p.lastCmdSeq;
     }
 
     const PS = 10;

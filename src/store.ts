@@ -32,6 +32,14 @@ interface SimState {
   matchLive: boolean;
 }
 
+export interface NetState {
+  role: 'local' | 'host' | 'client';
+  roomCode: string;
+  roster: string[];
+  connected: boolean;
+  error: string;
+}
+
 interface UiState extends SimState {
   appPhase: 'menu' | 'playing';
   settings: MatchSettings;
@@ -43,8 +51,14 @@ interface UiState extends SimState {
   lastHurtAt: number;
   lastHurtAmount: number;
   lastHitConfirmAt: number;
+  net: NetState;
+  netKbps: number;
+  playerName: string;
 
   setSimState: (s: Partial<SimState>) => void;
+  setNet: (n: Partial<NetState>) => void;
+  setNetKbps: (v: number) => void;
+  setPlayerName: (name: string) => void;
   setAppPhase: (p: 'menu' | 'playing') => void;
   setSettings: (s: Partial<MatchSettings>) => void;
   setCamMode: (m: 'fp' | 'tp') => void;
@@ -86,8 +100,21 @@ export const useStore = create<UiState>((set) => ({
   lastHurtAt: 0,
   lastHurtAmount: 0,
   lastHitConfirmAt: 0,
+  net: { role: 'local', roomCode: '', roster: [], connected: false, error: '' },
+  netKbps: 0,
+  playerName: (typeof localStorage !== 'undefined' && localStorage.getItem('mb-name')) || 'Blaster',
 
   setSimState: (s) => set(s),
+  setNet: (n) => set((st) => ({ net: { ...st.net, ...n } })),
+  setNetKbps: (netKbps) => set({ netKbps }),
+  setPlayerName: (playerName) => {
+    try {
+      localStorage.setItem('mb-name', playerName);
+    } catch {
+      // storage may be unavailable; the name just won't persist
+    }
+    set({ playerName });
+  },
   setAppPhase: (appPhase) => set({ appPhase }),
   setSettings: (s) => set((st) => ({ settings: { ...st.settings, ...s } })),
   setCamMode: (camMode) => set({ camMode }),

@@ -7,7 +7,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CFG, STRIDE, TUNING as T } from '../config.ts';
-import { getInterpolation } from '../simClient.ts';
+import { getInterpolation, getLocalPlayerId } from '../simClient.ts';
 import { useStore } from '../store.ts';
 
 const TICK_MS = 1000 / CFG.TICK_HZ;
@@ -46,7 +46,7 @@ export function Players() {
       const o = i * STRIDE.PLAYER;
       const c = curr.players;
       const alive = c[o + 13] > 0.5;
-      const isLocalFp = i === 0 && camMode.current === 'fp';
+      const isLocalFp = i === getLocalPlayerId() && camMode.current === 'fp';
       if (!alive || isLocalFp) {
         rig.group.visible = false;
         continue;

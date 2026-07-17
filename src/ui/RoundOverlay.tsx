@@ -5,6 +5,9 @@ import { useStore } from '../store.ts';
 import { setPaused } from '../simClient.ts';
 import { Scoreboard } from './Scoreboard.tsx';
 
+// In a networked game "back" returns to the still-connected lobby (the host can
+// rematch); only the pure-local game pauses the worker.
+
 export function RoundOverlay() {
   const round = useStore((s) => s.round);
   const banner = useStore((s) => s.banner);
@@ -33,11 +36,11 @@ export function RoundOverlay() {
             className="btn"
             onClick={() => {
               document.exitPointerLock?.();
-              setPaused(true);
+              setPaused(true); // no-op in networked games
               setAppPhase('menu');
             }}
           >
-            back to menu
+            {useStore.getState().net.role === 'local' ? 'back to menu' : 'back to lobby'}
           </button>
         </div>
       )}

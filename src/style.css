@@ -301,6 +301,41 @@ input[type='range'] { width: 100%; accent-color: var(--accent); margin: 6px 0 12
 }
 .btn:hover { background: var(--accent-bright); }
 
+/* multiplayer lobby */
+.lobby { text-align: left; margin-bottom: 26px; }
+.lobby h2 {
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 10px;
+}
+.lobby-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.text {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 150px;
+}
+.text.code { width: 84px; text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
+.text:focus { outline: none; border-color: var(--accent); }
+.room-code { font-size: 15px; color: var(--dim); }
+.room-code b { color: var(--accent-bright); font-size: 19px; letter-spacing: 4px; margin-left: 4px; }
+.roster { display: flex; gap: 8px; flex-wrap: wrap; }
+.roster-name {
+  background: rgba(46, 194, 224, 0.12);
+  border: 1px solid rgba(46, 194, 224, 0.3);
+  color: #9adfef;
+  border-radius: 12px;
+  padding: 3px 12px;
+  font-size: 13px;
+}
+.net-error { color: var(--danger); margin-top: 8px; font-size: 13px; }
+.opt:disabled { opacity: 0.4; cursor: default; }
+
 .help { margin-top: 28px; color: var(--dim); font-size: 14px; line-height: 1.55; }
 .help b { color: var(--text); }
 .keys { margin-top: 10px; font-size: 12.5px; letter-spacing: 0.4px; }

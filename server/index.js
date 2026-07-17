@@ -1,6 +1,7 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { attachSignaling } from './signaling.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,7 +32,9 @@ app.get('*', (_req, res) => {
   res.sendFile(join(DIST, 'index.html'));
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Master Blasters running at http://localhost:${PORT}`);
-  console.log(`Serving: ${DIST}`);
+  console.log(`Serving: ${DIST} · signaling at ws://localhost:${PORT}/signal`);
 });
+
+attachSignaling(server);

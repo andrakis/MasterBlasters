@@ -22,27 +22,40 @@ authoritative frame (rate 12/s; >4 m snaps — respawns). Mouse look is applied 
 the camera instantly and travels on the cmd as aim (`yaw`/`pitch`); the sim treats
 it as an input like any other. Energy is sim-owned; the shim only predicts the body.
 
-## §3 Netcode model (phase 2 — the seams exist today)
+## §3 Netcode (LIVE — HL2/Source-style replication, not lockstep)
 
-HL2/Source-style replication, **not lockstep** — desync is structurally impossible
-because clients never simulate the world:
+Desync is structurally impossible because clients never simulate the world. One
+player hosts; their worker runs the only `World`.
 
-- **Host-authoritative.** One peer runs this same `World` at 60 Hz.
-- **Upstream:** `UserCmd`s at 30 Hz — quantized to ~10 B (protocol.ts documents the
-  packing). Bots already occupy the same seam a remote player will.
-- **Downstream:** snapshots at 20 Hz, quantized + delta-compressed against the last
-  client-acked snapshot (per-entity dirty masks; full snapshot on join/gap). The
-  `*Core` structs in `sim/types.ts` are exactly the replicated surface. ~8 players
-  ≈ 3–6 KB/s per client.
-- **Channels:** one unreliable-unordered WebRTC DataChannel (`ordered:false,
-  maxRetransmits:0`) for cmds + snapshots; one reliable-ordered for handshake,
-  `SimEvent`s, chat. Signaling: a WS route on `server/index.js`.
-- **Client prediction:** own player only — replay unacked cmds through
-  `sim/movement.ts` after each snapshot (the v1 shim, plus a cmd ring buffer).
-- **Interpolation:** remote entities render 100 ms in the past between buffered
-  snapshots; extrapolate ≤50 ms. Movers need nothing: pure functions of tick.
-- **Lag compensation:** host keeps ~1 s of positions, rewinds hitscan by the
-  shooter's latency+interp.
+- **Topology:** signaling over a same-origin `/signal` WebSocket
+  (`server/signaling.js`, attached to both Vite dev and the Express prod server —
+  rooms with 4-letter codes, SDP/ICE relay). Per peer, the host offers an
+  RTCPeerConnection with TWO DataChannels: `fast` (`ordered:false,
+  maxRetransmits:0` — the browser's UDP) for cmds up / snapshots down, and `ord`
+  (reliable) for handshake, roster, match start, `SimEvent`s, pings.
+- **Upstream:** every render frame the client sends a 10-byte quantized `UserCmd`
+  (`protocol.ts encodeCmd`). The host stamps it with the peer's slot and queues it
+  into the worker — bots, the host's own input, and remote peers all enter the sim
+  through the identical seam.
+- **Downstream:** every `SNAP_EVERY` (3) ticks the host encodes the worker frame
+  with `encodeSnapshot` — 13 B header + 30 B/player + 15 B/projectile + 9 B/pickup,
+  positions i16 @ 1/64 m — and fans the same buffer to every peer. Measured in the
+  two-browser test: **~2-3 KB/s per client**. Full state every snapshot: loss needs
+  no ack bookkeeping (delta masks remain a future optimization).
+- **Client prediction:** `PlayerRig` rebases on each snapshot to the authoritative
+  body, then replays every unacked cmd (ack = `lastCmdSeq` echoed in the player
+  record, wrap-aware) through the SAME `sim/movement.ts` integrator, and keeps
+  integrating live input between snapshots. Rebase error decays through a
+  render-only smoothing offset (~80 ms).
+- **Interpolation:** remote entities lerp between the two retained frames (3-tick
+  spans at 20 Hz); projectiles extrapolate ballistically; movers replicate nothing
+  (pure functions of tick).
+- **Lag compensation:** the host pings each peer on `ord` (2 s cadence), converts
+  RTT/2 + INTERP_MS into `lagTicks`, and the sim rewinds hitscan capsules through
+  a 64-tick position history (`world.rewindPos`) — you hit what you aimed at.
+- **Client frames:** `simClient.frameFromSnapshot` rebuilds the exact `Frame` shape
+  the renderer already consumes (scores and HUD derived from the player records) —
+  the scene graph and HUD have no idea the worker is remote.
 
 ## §4 Determinism (for tests and replays, not sync)
 

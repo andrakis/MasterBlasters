@@ -7,11 +7,11 @@ export const CFG = {
   MAX_CATCHUP: 6, // max ticks per worker wake before dropping time debt
   SEED: 0xb1a57e12, // default run seed; menu rerolls per match
 
-  // Phase-2 replication targets (documented here so the protocol shapes and the
-  // eventual codec agree; unused by the local game):
+  // Replication (phase 2, live): host sim runs at TICK_HZ; the wire does not.
   CMD_HZ: 30, // client -> host usercmd rate
-  SNAPSHOT_HZ: 20, // host -> client snapshot rate
+  SNAP_EVERY: 3, // host -> client snapshot every N ticks (60/3 = 20 Hz)
   INTERP_MS: 100, // remote entities render this far in the past (cl_interp)
+  LAG_COMP_MAX_TICKS: 60, // hitscan rewind cap (1 s of position history)
 
   MAX_PLAYERS: 8,
 } as const;
@@ -146,7 +146,17 @@ export const AI_TIERS: readonly AiTier[] = [
 // Flat-buffer strides for worker->main frames. Update pack() (world.ts) and the
 // consuming renderer together when these change.
 export const STRIDE = {
-  PLAYER: 22, // id,x,y,z,vx,vy,vz,yaw,pitch,hp,energy,weapon,lives,alive,team,quadT,kos,falls,bot,jetting,grounded,ninja
+  // id,x,y,z,vx,vy,vz,yaw,pitch,hp,energy,weapon,lives,alive,team,quadT,kos,
+  // falls,bot,jetting,grounded,ninja,ammoSniper,ammoNuke,respawnS,lastCmdSeq
+  PLAYER: 26,
   PROJECTILE: 10, // id,kind,x,y,z,vx,vy,vz,quad,ownerTeam
   PICKUP: 6, // id,kind,x,y,z,landed
+} as const;
+
+// Flat-buffer field offsets for the player record (renderer + codec + HUD).
+export const P = {
+  ID: 0, X: 1, Y: 2, Z: 3, VX: 4, VY: 5, VZ: 6, YAW: 7, PITCH: 8, HP: 9,
+  ENERGY: 10, WEAPON: 11, LIVES: 12, ALIVE: 13, TEAM: 14, QUAD_T: 15, KOS: 16,
+  FALLS: 17, BOT: 18, JETTING: 19, GROUNDED: 20, NINJA: 21, AMMO_SNIPER: 22,
+  AMMO_NUKE: 23, RESPAWN_S: 24, CMD_SEQ: 25,
 } as const;

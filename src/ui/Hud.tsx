@@ -157,6 +157,8 @@ export function Hud() {
 
       <div className="debug">
         tick {tick} · sim {simTps}tps · {fps}fps
+        {useStore.getState().net.role !== 'local' &&
+          ` · ${useStore.getState().net.role} · ${useStore.getState().netKbps.toFixed(1)} kB/s`}
       </div>
     </div>
   );

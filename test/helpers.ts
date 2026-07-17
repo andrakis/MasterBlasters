@@ -30,6 +30,8 @@ export function makeTestPlayer(overrides: Partial<PlayerCore> = {}): PlayerCore 
     prevButtons: 0,
     lastHitBy: -1,
     lastHitTick: -1_000_000,
+    lastCmdSeq: 0,
+    lagTicks: 0,
     ...overrides,
   };
 }
