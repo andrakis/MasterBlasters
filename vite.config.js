@@ -1,6 +1,10 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { attachSignaling } from './server/signaling.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Same-origin WebRTC signaling in dev: attach the /signal WebSocket route to
 // Vite's own HTTP server, exactly as server/index.js does in prod.
@@ -35,6 +39,13 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
+    rollupOptions: {
+      // the BSP viewer is a separate page so it never lands in the game bundle
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        bspview: resolve(__dirname, 'bspview.html'),
+      },
+    },
   },
   worker: {
     format: 'es',
