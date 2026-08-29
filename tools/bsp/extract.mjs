@@ -14,6 +14,7 @@ import { readVtf } from '../lib/vtf.mjs';
 import { findMaterial } from '../lib/vmt.mjs';
 import { encodePng } from '../lib/png.mjs';
 import { missingTexture, voidTexture } from '../lib/placeholder.mjs';
+import { playfieldShift } from '../lib/sourceCoords.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };
@@ -35,10 +36,19 @@ const bsp = new Bsp(bspPath);
 const planes = bsp.planes(), texinfo = bsp.texinfo(), texdata = bsp.texdata();
 const faces = bsp.faces(), verts = bsp.vertexes(), edges = bsp.edges(), surfedges = bsp.surfedges();
 const models = bsp.models(), ents = bsp.entities();
+
 const lighting = bsp.lump(8); // LUMP_LIGHTING, ColorRGBExp32
 
 // Source is Z-up / X-forward; three.js is Y-up. Also flips handedness.
-const toThree = (x, y, z) => [x * UNITS_TO_M, z * UNITS_TO_M, -y * UNITS_TO_M];
+// The playfield shift is applied here too, so scene.json comes out in the SAME
+// space as the MapDef the sim collides against -- the game can then render this
+// geometry straight over those boxes with no offset to get wrong.
+const spawnOrigins = ents.filter((e) => e.classname === 'info_player_deathmatch' && e.origin)
+  .map((e) => e.origin.split(/\s+/).map(Number));
+const SHIFT = playfieldShift(spawnOrigins, UNITS_TO_M);
+const toThree = (x, y, z) => [
+  x * UNITS_TO_M - SHIFT[0], z * UNITS_TO_M - SHIFT[1], -y * UNITS_TO_M - SHIFT[2],
+];
 
 // ---------------------------------------------------------------- materials
 // TOOLS/* are editor-only surfaces (clip, trigger, nodraw, skip). They must not
@@ -248,6 +258,7 @@ const out = {
   generator: 'tools/bsp/extract.mjs',
   bspVersion: bsp.version,
   unitsToMeters: UNITS_TO_M,
+  playfieldShift: SHIFT,
   lightmap: { file: 'lightmap.png', width: atlasW, height: atlasH, brightness: LM_BRIGHTNESS },
   materials: [...materials.values()].map((m) => ({
     name: m.name, file: m.file, width: m.width, height: m.height,

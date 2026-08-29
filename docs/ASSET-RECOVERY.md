@@ -212,3 +212,67 @@ outside that band:
 
 That is the original 2007 look: the arena floats in a lit band and the columns
 recede into the void. Only affects the fidelity viewer — the game re-lights.
+
+
+## Three maps in, and textures reach the game (2026-08-29)
+
+### Why the game had no textures
+Two pipelines, and nothing bridged them: the game rendered `MapDef` — flat-coloured
+collision boxes with the derived theme — while the textured, lightmapped geometry sat
+in `scene.json`, loaded only by the viewer.
+
+`src/scene/BspWorld.tsx` now closes that. It renders the BSP faces with their 2007
+lightmap; collision stays on the MapDef boxes. `MapMesh` keeps rendering for
+hand-authored maps and is merely made **invisible** (never unmounted — its `useFrame`
+drives `updateMovers` at priority -1 and the prediction shim reads the result the
+same frame).
+
+Both tools now apply the same `playfieldShift` from `tools/lib/sourceCoords.mjs`, so
+`scene.json` and the `MapDef` come out in **one coordinate space** and cannot drift.
+The BSP's black world-seal is dropped in-game (we draw our own sky) but kept in the
+viewer.
+
+| map | id | platforms | angled | tris | placeholder mats | killY |
+|---|---|---|---|---|---|---|
+| mb_columns | `mb_columns` | 153 | 0 | 3816 | 2 | -12.04 |
+| mb_quake | `mb_quake_2007` | 214 | 54 | 2408 | 1 | -0.61 |
+| mb_outpost | `mb_outpost` | 81 | 36 | 1232 | 4 | -3.40 |
+
+`mb_quake_2007` sits **alongside** the memory-recreated `quake.ts` (which keeps
+`mb_quake`) rather than replacing it — the pair is worth comparing. Its `scene.json`
+lives at `public/maps/mb_quake_2007/` so the hand-authored map does not accidentally
+pick up BSP geometry.
+
+### Fixed getting them in
+- **3D skybox.** mb_outpost has a `sky_camera`; Source builds a miniature copy of the
+  world far from the playfield as a backdrop. It is real brushwork, so no size or
+  span filter catches it. Brushes nearer the `sky_camera` than the spawn centroid are
+  now excluded — 19 dropped, and the playfield collapsed from **165 m to 58 m**.
+- **Kill plane.** The old `top < -1` threshold rejected mb_quake's slab, which sits
+  only 0.61 m below its lowest spawn, so it silently fell back to the -30 default.
+  Now: any `trigger_hurt` below the lowest spawn is a candidate, lethal ones (damage
+  >= 100) win, and among those the highest — a kill plane under a walkable deck would
+  let players stand inside the void.
+- **The yaw formula now lives in `tools/lib/sourceCoords.mjs` and is unit-tested**
+  (`test/sourceCoords.test.ts`) against `aimDir()` for all four cardinal angles.
+  Getting it wrong is silent: the map loads, the geometry is right, players just face
+  the wrong way. It cost an afternoon once already.
+
+### A test that was wrong, not the data
+"Spawns face the arena centre" failed on mb_outpost. The data was correct — outpost is
+a **corridor** (spawns span x -18.5..22.1 but z only -4.7..5.3) and its spawns face
+along it, as team-map spawns do. A single ray was also a pinhole: from the top of
+mb_columns' centre tower it slips between distant columns. The test now samples the
+actual **view cone** (3 pitches x 5 yaws) and asserts something is in it.
+
+### On the remaining placeholders
+The BSP pakfile (lump 40) holds only cubemaps and VBSP's cubemap-patched water VMTs —
+no real textures — and those patches point at Valve's `dev/dev_water2`. So reading the
+pakfile would gain nothing here. mb_outpost's magenta is 3 water surfaces plus the
+crates; mb_quake's is the crates. All Valve assets, all correctly flagged.
+
+### Still open
+- mb_egyptarena (16% axis-aligned) and mb_pirates (22%, plus 24 `func_tracktrain`
+  and 12 `func_door_rotating`) need displacements and hand-authored movers.
+- The recovered maps are **unplaytested for feel**. `killY -0.61` on mb_quake in
+  particular is tight by design and wants a human on the keys.

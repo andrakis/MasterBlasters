@@ -10,6 +10,7 @@
 import { writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { Bsp, CONTENTS } from '../lib/bsp.mjs';
+import { sourceYawToSimYaw, playfieldShift } from '../lib/sourceCoords.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };
@@ -42,15 +43,30 @@ function aabb(mins, maxs) {
 // which is the convention every hand-authored map in src/sim/maps follows.
 const ents = bsp.entities();
 const spawnEnts = ents.filter((e) => e.classname === 'info_player_deathmatch' && e.origin);
-const spawnPos = spawnEnts.map((e) => conv(e.origin.split(/\s+/).map(Number)));
-const deckY = spawnPos.length ? Math.min(...spawnPos.map((p) => p[1])) : 0;
-const cx = spawnPos.length ? spawnPos.reduce((s, p) => s + p[0], 0) / spawnPos.length : 0;
-const cz = spawnPos.length ? spawnPos.reduce((s, p) => s + p[2], 0) / spawnPos.length : 0;
+const [cx, deckY, cz] = playfieldShift(spawnEnts.map((e) => e.origin.split(/\s+/).map(Number)), SCALE);
 const shift = (p) => [p[0] - cx, p[1] - deckY, p[2] - cz];
+
+// --- 3D skybox --------------------------------------------------------------
+// A sky_camera marks a miniature copy of the world built far from the playfield
+// and rendered as the backdrop. It is real brushwork, so no size or span filter
+// catches it; the reliable test is which region a brush is nearer to.
+const skyCam = ents.find((e) => e.classname === 'sky_camera' && e.origin);
+const skyPos = skyCam ? skyCam.origin.split(/\s+/).map(Number) : null;
+const spawnCentroidSrc = spawnEnts.length
+  ? spawnEnts.map((e) => e.origin.split(/\s+/).map(Number))
+      .reduce((a, p) => [a[0] + p[0] / spawnEnts.length, a[1] + p[1] / spawnEnts.length, a[2] + p[2] / spawnEnts.length], [0, 0, 0])
+  : null;
+const inSkybox = (mins, maxs) => {
+  if (!skyPos || !spawnCentroidSrc) return false;
+  const c = [0, 1, 2].map((i) => (mins[i] + maxs[i]) / 2);
+  const dSky = Math.hypot(c[0] - skyPos[0], c[1] - skyPos[1], c[2] - skyPos[2]);
+  const dPlay = Math.hypot(c[0] - spawnCentroidSrc[0], c[1] - spawnCentroidSrc[1], c[2] - spawnCentroidSrc[2]);
+  return dSky < dPlay;
+};
 
 // --- platforms --------------------------------------------------------------
 const platforms = [];
-const dropped = { shell: 0, clip: 0, water: 0, thin: 0, angled: 0 };
+const dropped = { shell: 0, clip: 0, water: 0, thin: 0, skybox: 0, angled: 0 };
 const angledNotes = [];
 
 for (const b of bsp.brushes()) {
@@ -58,6 +74,7 @@ for (const b of bsp.brushes()) {
   if (b.contents & (CONTENTS.PLAYERCLIP | CONTENTS.MONSTERCLIP)) { dropped.clip++; continue; }
   if (b.contents & CONTENTS.WATER) { dropped.water++; continue; }
   if (!(b.contents & CONTENTS.SOLID)) continue;
+  if (inSkybox(b.mins, b.maxs)) { dropped.skybox++; continue; }
 
   const { lo, hi } = aabb(b.mins, b.maxs);
   const size = [0, 1, 2].map((i) => hi[i] - lo[i]);
@@ -77,20 +94,11 @@ for (const b of bsp.brushes()) {
 }
 
 // --- spawns -----------------------------------------------------------------
-// Yaw conversion, derived against the sim's own aimDir() in sim/combat.ts --
-// which is authoritative, being what weapons fire along and bots aim with:
-//   Source facing  = (cos S, sin S) over its (x, y)
-//   our facing     = (cos S, -sin S) over (x, z), since conv() negates y
-//   sim yaw Y gives facing (-sin Y, -cos Y)        [aimDir, combat.ts]
-// Solving gives Y = S - 90 deg.
-// (Note: crusher.ts's z-axis spawns disagree with aimDir and face outward. That
-// is pre-existing hand-authored data, not the convention -- do not copy it.)
+// Yaw conversion lives in lib/sourceCoords.mjs and is unit-tested there.
 const spawnPoints = spawnEnts.map((e) => {
   const p = shift(conv(e.origin.split(/\s+/).map(Number)));
   const srcYaw = e.angles ? Number(e.angles.split(/\s+/)[1]) || 0 : 0;
-  let yaw = (srcYaw - 90) * Math.PI / 180;
-  // normalise to (-PI, PI] so the numbers read like the hand-authored maps
-  yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  const yaw = sourceYawToSimYaw(srcYaw);
   return {
     x: +p[0].toFixed(2), y: +p[1].toFixed(2), z: +p[2].toFixed(2),
     yaw: +yaw.toFixed(4),
@@ -117,10 +125,14 @@ for (const e of ents) {
   if (!m) continue;
   const { lo, hi } = aabb(m.mins, m.maxs);
   const top = shift([0, hi[1], 0])[1];
-  const span = hi[1] - lo[1];
-  if (top < -1) killCandidates.push({ top, span });
+  // Anything at or above the lowest spawn is an out-of-bounds volume, not the
+  // floor. shift() puts the lowest spawn at y=0, so that test is just top < 0.
+  if (top >= 0) continue;
+  killCandidates.push({ top, span: hi[1] - lo[1], damage: Number(e.damage ?? 0) });
 }
-killCandidates.sort((a, b) => b.top - a.top);
+// The fall-out plane is the lethal one; among equals take the highest, since a
+// kill plane below a walkable deck would let players stand inside the void.
+killCandidates.sort((a, b) => (b.damage >= 100) - (a.damage >= 100) || b.top - a.top);
 const killY = killCandidates.length ? killCandidates[0].top : -30;
 
 // --- theme ------------------------------------------------------------------
@@ -205,6 +217,7 @@ const jsonOut = flag('--json', null);
 if (jsonOut) {
   writeFileSync(jsonOut, JSON.stringify({
     id: mapId, platforms, spawnPoints, pickupSpots, killY, theme,
+    playfieldShift: [cx, deckY, cz],
   }));
   console.log(`  json -> ${jsonOut}`);
 }

@@ -12,7 +12,7 @@ import { getInterpolation } from '../simClient.ts';
 
 const TICK_MS = 1000 / CFG.TICK_HZ;
 
-export function MapMesh({ map, boxes }: { map: MapDef; boxes: Box[] }) {
+export function MapMesh({ map, boxes, visible = true }: { map: MapDef; boxes: Box[]; visible?: boolean }) {
   const groups = useRef<(THREE.Group | null)[]>([]);
 
   useFrame(() => {
@@ -25,8 +25,10 @@ export function MapMesh({ map, boxes }: { map: MapDef; boxes: Box[] }) {
     }
   }, -1);
 
+  // NOTE: never unmount this to hide it. The useFrame above runs updateMovers at
+  // priority -1, and the prediction shim reads the result the same frame.
   return (
-    <group>
+    <group visible={visible}>
       {boxes.map((b, i) => {
         const p = b.def;
         const mover = p.kind === 'mover';

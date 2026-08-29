@@ -12,7 +12,11 @@ await p.waitForTimeout(1500);
 // pick the map in the menu, then start
 const picked = await p.evaluate((id) => {
   const btns = [...document.querySelectorAll('.opt')];
-  const want = btns.find((b) => b.textContent.trim().toUpperCase().includes(id.replace('mb_', '').toUpperCase()));
+  const norm = (t) => t.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const target = norm(id);
+  const want = btns.find((b) => norm(b.textContent) === target)
+    ?? btns.find((b) => norm(b.textContent).includes(target))
+    ?? btns.find((b) => target.includes(norm(b.textContent)));
   if (want) { want.click(); return want.textContent.trim(); }
   return null;
 }, mapId);

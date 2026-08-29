@@ -3,11 +3,12 @@
 // shim (PlayerRig) and the platform renderer (MapMesh) so mover positions and
 // collision always agree.
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useStore } from '../store.ts';
 import { MAPS } from '../sim/maps/index.ts';
 import { makeBoxes } from '../sim/maps/types.ts';
 import { MapMesh } from './MapMesh.tsx';
+import { BspWorld } from './BspWorld.tsx';
 import { PlayerRig } from './PlayerRig.tsx';
 import { Players } from './Players.tsx';
 import { Projectiles } from './Projectiles.tsx';
@@ -19,6 +20,10 @@ export function Scene() {
   const mapId = useStore((s) => s.mapId);
   const map = MAPS[mapId] ?? MAPS.mb_test;
   const boxes = useMemo(() => makeBoxes(map), [map]);
+  // Maps recovered from the 2007 BSPs ship real textured geometry alongside the
+  // collision boxes. When it loads, the boxes stop drawing but keep driving movers.
+  const [bspWorld, setBspWorld] = useState(false);
+  const onBspLoaded = useCallback((ok: boolean) => setBspWorld(ok), []);
 
   return (
     <>
@@ -29,7 +34,8 @@ export function Scene() {
       <ambientLight intensity={0.35} />
 
       <Sky top={map.theme.skyTop} bottom={map.theme.skyBottom} />
-      <MapMesh map={map} boxes={boxes} />
+      <MapMesh map={map} boxes={boxes} visible={!bspWorld} />
+      <BspWorld key={map.id} mapId={map.id} onLoaded={onBspLoaded} />
       <PlayerRig map={map} boxes={boxes} />
       <Players />
       <Projectiles />
