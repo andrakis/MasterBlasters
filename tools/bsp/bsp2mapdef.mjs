@@ -9,7 +9,7 @@
 // The faithful geometry lives in the viewer (extract.mjs), not here.
 import { writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { Bsp, CONTENTS } from './lib/bsp.mjs';
+import { Bsp, CONTENTS } from '../lib/bsp.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };

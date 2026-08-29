@@ -67,12 +67,59 @@ alpha is needed). Lighting lump is LDR (`ColorRGBExp32`), 1626 faces.
 - [ ] 40 files: 9 WAV (PCM 44.1k) + 31 MP3 — browser-native, no conversion
 - [ ] Wire to the existing `src/audio.ts` event-drain stubs
 
-## M-A6 — Models — DEFERRED
-`.mdl`+`.vvd`+`.vtx` is three interlocking formats with bone weights and LOD strip
-groups: days of work, not hours. Worse, most of what is here is **stock Valve**
-content (police.mdl, w_Pistol, v_crowbar, male_01), not mod-original — only
-`ctf_weapons/{v,w}_sniper` look custom. Low value, high cost, licensing questions.
-Not scheduled.
+## M-A6 — Models — DONE (extraction + viewer)
+
+**My earlier "mostly stock Valve" call was wrong.** The filenames look like Valve's
+because the mod *overrode stock paths*; the material references give the game away:
+
+| file | materials | what it is |
+|---|---|---|
+| `police.mdl` | `t_arctic, Blade, grip, Handguard, ninja_mask, ninjatie` | **the ninja** |
+| `Humans/Group03/male_01.mdl` | `t_leet, t_leet_hat, t_leet_scarf, bullet` | **the cowboy** |
+| `weapons/v_crowbar.mdl` | `fx2ogg, masogg, fxogg` (`models/oggmix/`) | **the saber** |
+| `weapons/v_Pistol.mdl` | internally `ctf_weapons/v_sniper.mdl` | **the sniper** |
+
+Every referenced material is present in the mod tree. These are the original assets
+for the four things the remake already reimplements.
+
+*Caveat:* `t_leet` / `t_arctic` are Counter-Strike:Source player-model names and the
+search paths include `props_c17` and `V_hand`, so the meshes are likely Valve base
+models **retextured** by the team rather than modelled from scratch. The textures are
+clearly the team's own.
+
+- [x] `tools/lib/mdl.mjs` — MDL + VVD + VTX reader (bind pose; no bone matrices
+      needed, VVD stores vertices already posed)
+- [x] `tools/mdl/extract.mjs` — CLI -> `public/models/<id>.json` + PNG textures
+- [x] Model mode in the viewer: `/bspview.html?model=ninja`
+- [ ] **Wire into the game** — see "the animation gate" below
+
+| model | tris | size | materials |
+|---|---|---|---|
+| cowboy | 13200 | 2.01 m | 6/6 resolved |
+| ninja | 5119 | 1.95 m | 6/6 resolved |
+| v_sniper | 3894 | viewmodel | 3/4 (`v_hand_sheet` is Valve's) |
+| v_saber | 3240 | viewmodel | 3/4 (same) |
+| w_sniper | 366 | 1.21 m | 1/1 resolved |
+
+`w_crowbar.mdl` is an .mdl-only stub with no .vvd/.vtx — no geometry to extract.
+
+### The animation gate
+Extraction gives the **bind pose**. Dropping these into the game as-is means
+T-posed players sliding around, which is a downgrade on the procedural bodies for
+feel-testing. Animation needs the bone tree plus the `localanim`/`localseq` lumps
+and a skinning path — a real project, and the roadmap's own position is that motion
+gets rebuilt in our sim rather than ported.
+
+**Cheapest real win: the viewmodels.** `v_sniper` / `v_saber` sit in the player's
+hands and barely animate, so swapping them for the placeholder viewmodel geometry
+is low risk and high payoff. Do that before the character models.
+
+### Bugs found building this
+- VMT `$basetexture` values use **backslashes** (`models\player\t_arctic\t_arctic`)
+  and mix separators freely. `resolveInsensitive` now normalises before splitting;
+  without it, half the model materials silently fell back to placeholders.
+- Model trees mix case (`male_01.mdl` beside `Male_01.dx90.vtx`), so the `.vvd`/`.vtx`
+  companion lookup has to be case-insensitive too.
 
 ## Licensing note
 Mod-original art (the EGYPTSOC_* texture sets, custom sounds) is the mod team's own.

@@ -1,4 +1,7 @@
-# BSP asset recovery
+# Source asset recovery
+
+> Shared codecs (VTF, VMT, PNG, MDL) live in `tools/lib/`. Model extraction is
+> `tools/mdl/`; this directory is the map pipeline.
 
 Extracts geometry, texturing and baked lighting from the 2007 Half-Life 2 mod's
 compiled maps (`~/git/masterblasters_hl2`). See `docs/ASSET-RECOVERY.md`.
@@ -42,6 +45,18 @@ Everything Source baked at compile time is replayed as ordinary three.js data: t
 lightmap becomes a texture atlas on a `uv1` channel feeding `MeshBasicMaterial.lightMap`,
 gamma-encoded and tagged sRGB so it round-trips to the linear value VRAD computed.
 Runtime behaviour (entity I/O, movers, spawners) is *not* ported — the sim owns it.
+
+## Models
+
+```
+node tools/mdl/extract.mjs ~/git/masterblasters_hl2/models/police.mdl \
+  --out public/models --name ninja
+```
+
+Reads MDL + VVD + VTX and emits the **bind pose** — the VVD stores vertices already
+posed, so a static mesh needs no bone matrices. View with
+`/bspview.html?model=ninja`. Animation is deliberately not ported; the sim owns
+motion. See `docs/ASSET-RECOVERY.md` for what these models actually are.
 
 ## Capture helpers
 

@@ -9,11 +9,11 @@
 // attributes and a texture atlas. Runtime behaviour is left to our own sim.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
-import { Bsp, CONTENTS, SURF } from './lib/bsp.mjs';
-import { readVtf } from './lib/vtf.mjs';
-import { findMaterial } from './lib/vmt.mjs';
-import { encodePng } from './lib/png.mjs';
-import { missingTexture, voidTexture } from './lib/placeholder.mjs';
+import { Bsp, CONTENTS, SURF } from '../lib/bsp.mjs';
+import { readVtf } from '../lib/vtf.mjs';
+import { findMaterial } from '../lib/vmt.mjs';
+import { encodePng } from '../lib/png.mjs';
+import { missingTexture, voidTexture } from '../lib/placeholder.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };

@@ -151,3 +151,69 @@ export function buildMapDefBoxes(md: MapDefJson, offset: [number, number, number
   }
   return group;
 }
+
+// ---------------------------------------------------------------- models
+export type ModelJson = {
+  id: string;
+  source: string;
+  internalName: string;
+  mdlVersion: number;
+  bindPoseOnly: boolean;
+  searchPaths: string[];
+  materials: { index: number; name: string; file: string | null; transparent: boolean; missing: boolean; shader: string | null }[];
+  bounds: [number, number][];
+  groups: { material: number; pos: number[]; normal: number[]; uv: number[]; idx: number[] }[];
+};
+
+export async function loadModel(base: string, id: string): Promise<ModelJson> {
+  const res = await fetch(`${base}/${id}.json`);
+  if (!res.ok) throw new Error(`${base}/${id}.json: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Models get real lighting, unlike the map: Source baked lightmaps for world
+ * geometry only, so a model's shading has to come from the scene.
+ */
+export function buildModel(model: ModelJson, base: string): BuiltScene {
+  const loader = new THREE.TextureLoader();
+  const materials = model.materials.map((m) => {
+    const mat = new THREE.MeshStandardMaterial({
+      map: m.file ? texture(`${base}/${m.file}`, loader) : null,
+      color: 0xffffff,
+      roughness: 0.7,
+      metalness: 0.05,
+      transparent: m.transparent,
+      alphaTest: m.transparent ? 0.5 : 0,
+      side: THREE.DoubleSide,
+    });
+    mat.name = m.name;
+    mat.userData.baseMap = mat.map;
+    mat.userData.missing = m.missing;
+    return mat;
+  });
+
+  const root = new THREE.Group();
+  const meshes: THREE.Mesh[] = [];
+  for (const g of model.groups) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.normal, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
+    geo.setIndex(g.idx);
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, materials[g.material] ?? materials[0]);
+    mesh.name = model.materials[g.material]?.name ?? `mat${g.material}`;
+    root.add(mesh);
+    meshes.push(mesh);
+  }
+  return {
+    root, meshes,
+    materials: materials as unknown as THREE.MeshBasicMaterial[],
+    lightmap: null as unknown as THREE.Texture,
+    dispose() {
+      for (const m of meshes) m.geometry.dispose();
+      for (const m of materials) { m.map?.dispose(); m.dispose(); }
+    },
+  };
+}

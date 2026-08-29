@@ -24,9 +24,13 @@ export function parseVmt(text) {
   return { shader, params: block() };
 }
 
-/** Case-insensitive lookup — VMT paths and on-disk names disagree constantly. */
+/**
+ * Case-insensitive lookup. VMT paths and on-disk names disagree constantly, and
+ * Valve's own material files mix separators freely — `models\\player\\x/y` is
+ * normal — so normalise backslashes before splitting.
+ */
 export function resolveInsensitive(root, relPath) {
-  const parts = relPath.split('/').filter(Boolean);
+  const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean);
   let cur = root;
   for (let p = 0; p < parts.length; p++) {
     const want = parts[p].toLowerCase();
@@ -40,7 +44,8 @@ export function resolveInsensitive(root, relPath) {
   return cur;
 }
 
-export function findMaterial(materialsRoot, name) {
+export function findMaterial(materialsRoot, rawName) {
+  const name = rawName.replace(/\\/g, '/');
   const vmtPath = resolveInsensitive(materialsRoot, `${name}.vmt`)
     ?? resolveInsensitive(materialsRoot, name.endsWith('.vmt') ? name : `${name}.vmt`);
   if (!vmtPath) return null;

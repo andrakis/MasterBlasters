@@ -9,7 +9,10 @@ const p = await b.newPage({ viewport: { width: 1280, height: 760 } });
 const errs = [];
 p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
 p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));
-await p.goto(`http://localhost:5181/bspview.html?map=${map}`, { waitUntil: 'networkidle', timeout: 60000 });
+const url = map.startsWith('model:')
+  ? `http://localhost:5181/bspview.html?model=${map.slice(6)}`
+  : `http://localhost:5181/bspview.html?map=${map}`;
+await p.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 await p.waitForFunction(() => window.__bspScene, null, { timeout: 30000 });
 await p.waitForTimeout(2500);
 if (togArg) { await p.evaluate((t) => window.__bspToggles(JSON.parse(t)), togArg); await p.waitForTimeout(600); }
