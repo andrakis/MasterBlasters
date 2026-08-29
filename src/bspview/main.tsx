@@ -106,9 +106,9 @@ function MapView({ scene, mapdef, toggles }: { scene: MapScene; mapdef: MapDefJs
       const mat = b.materials[i];
       const src = scene.materials[i];
       mat.map = toggles.textures ? (mat.userData.baseMap ?? null) : null;
-      // materials we could not resolve are stock Valve content; render them as
-      // flat void rather than pretending they lit up
-      if (src.missing) { mat.color.setHex(0x0b0b0d); mat.lightMapIntensity = 0; }
+      const kind = src.kind ?? 'texture';
+      if (kind === 'void') { mat.color.setHex(0x000000); mat.lightMapIntensity = 0; }
+      else if (kind === 'placeholder') { mat.color.setHex(0xffffff); mat.lightMapIntensity = 0; }
       else {
         mat.color.setHex(toggles.textures ? 0xffffff : 0xb0b0b0);
         mat.lightMapIntensity = toggles.lightmap ? toggles.brightness : 0;

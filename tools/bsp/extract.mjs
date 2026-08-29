@@ -13,6 +13,7 @@ import { Bsp, CONTENTS, SURF } from './lib/bsp.mjs';
 import { readVtf } from './lib/vtf.mjs';
 import { findMaterial } from './lib/vmt.mjs';
 import { encodePng } from './lib/png.mjs';
+import { missingTexture, voidTexture } from './lib/placeholder.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };
@@ -48,11 +49,24 @@ const VALVE_STOCK = /^(tools|halflife|props|dev|editor|debug|engine|effects|spri
 const materials = new Map(); // name -> {index, file, width, height, transparent, tool, stock}
 function materialFor(name) {
   if (materials.has(name)) return materials.get(name);
-  const rec = { index: materials.size, name, file: null, width: 128, height: 128, transparent: false, tool: isTool(name), stock: VALVE_STOCK.test(name), missing: false, shader: null };
+  const rec = { index: materials.size, name, file: null, width: 128, height: 128, transparent: false, tool: isTool(name), stock: VALVE_STOCK.test(name), missing: false, generated: false, kind: 'texture', shader: null };
   materials.set(name, rec);
   if (rec.tool) return rec;
   const found = findMaterial(materialsRoot, name);
-  if (!found || !found.vtfPath) { rec.missing = true; return rec; }
+  if (!found || !found.vtfPath) {
+    rec.missing = true;
+    rec.generated = true;
+    // HALFLIFE/BLACK is flat black by definition — regenerate it rather than
+    // flag it missing. Anything else gets a loud placeholder.
+    const isVoid = /^halflife[\/\\]black$/i.test(name);
+    const tex = isVoid ? voidTexture() : missingTexture();
+    rec.kind = isVoid ? 'void' : 'placeholder';
+    rec.width = tex.width; rec.height = tex.height;
+    const file = `${name.replace(/[\/\\]/g, '_').toLowerCase()}.png`;
+    writeFileSync(join(outDir, 'textures', file), encodePng(tex.pixels, tex.width, tex.height));
+    rec.file = `textures/${file}`;
+    return rec;
+  }
   rec.shader = found.shader;
   try {
     const tex = readVtf(found.vtfPath);
@@ -237,7 +251,8 @@ const out = {
   lightmap: { file: 'lightmap.png', width: atlasW, height: atlasH, brightness: LM_BRIGHTNESS },
   materials: [...materials.values()].map((m) => ({
     name: m.name, file: m.file, width: m.width, height: m.height,
-    transparent: m.transparent, tool: m.tool, stock: m.stock, missing: m.missing, shader: m.shader,
+    transparent: m.transparent, tool: m.tool, stock: m.stock, missing: m.missing,
+    generated: m.generated, kind: m.kind, shader: m.shader,
   })),
   models: models.map((m) => ({ mins: m.mins, maxs: m.maxs, origin: m.origin })),
   groups: [...groups.values()].map((g) => ({

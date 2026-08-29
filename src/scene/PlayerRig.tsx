@@ -44,6 +44,10 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
   const pendingWeapon = useRef(-1);
   const seq = useRef(0);
   const wasAlive = useRef(true);
+  // the shim owns look direction, but it must start from the spawn's facing --
+  // otherwise every player begins at yaw 0 regardless of which way the spawn
+  // points, which on the recovered 2007 maps means staring into the void
+  const adoptedSpawnYaw = useRef(false);
   const scratchDir = useRef(new THREE.Vector3());
   const scratchOff = useRef(new THREE.Vector3());
   // client-mode prediction: last snapshot tick we rebased from, plus a visual
@@ -199,6 +203,13 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
         b.x = auth.x; b.y = auth.y; b.z = auth.z;
         b.vx = auth.vx; b.vy = auth.vy; b.vz = auth.vz;
         smooth.current.x = 0; smooth.current.y = 0; smooth.current.z = 0;
+        adoptedSpawnYaw.current = false;
+      }
+      // adopt the spawn facing once per life; after that look is the player's
+      if (!adoptedSpawnYaw.current) {
+        adoptedSpawnYaw.current = true;
+        yaw.current = auth.yaw;
+        pitch.current = 0;
       }
 
       if (role === 'client' && auth.tick !== lastAuthTick.current) {

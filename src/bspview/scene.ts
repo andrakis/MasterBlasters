@@ -4,7 +4,8 @@ import * as THREE from 'three';
 
 export type SceneMaterial = {
   name: string; file: string | null; width: number; height: number;
-  transparent: boolean; tool: boolean; stock: boolean; missing: boolean; shader: string | null;
+  transparent: boolean; tool: boolean; stock: boolean; missing: boolean;
+  generated?: boolean; kind?: 'texture' | 'void' | 'placeholder'; shader: string | null;
 };
 export type SceneGroup = {
   model: number; material: number;
@@ -62,10 +63,8 @@ export function buildScene(scene: MapScene, base: string): BuiltScene {
 
   const materials = scene.materials.map((m) => {
     const mat = new THREE.MeshBasicMaterial({
-      // a missing texture is almost always stock Valve content we can't ship;
-      // render it flat rather than pretending it resolved
       map: m.file ? texture(`${base}/${m.file}`, loader) : null,
-      color: m.file ? 0xffffff : 0x101010,
+      color: 0xffffff,
       transparent: m.transparent,
       alphaTest: m.transparent ? 0.5 : 0,
       side: THREE.FrontSide,
@@ -76,7 +75,10 @@ export function buildScene(scene: MapScene, base: string): BuiltScene {
     // keep the decoded texture reachable so toggling `textures` off and back on
     // does not drop it (setting mat.map = null is otherwise irreversible)
     mat.userData.baseMap = mat.map;
-    mat.userData.missing = !m.file;
+    mat.userData.kind = m.kind ?? 'texture';
+    // the void seal takes no light (it IS the void); the placeholder takes none
+    // either, so it stays uniformly loud instead of fading into a dark corner
+    if (m.kind === 'void' || m.kind === 'placeholder') mat.lightMap = null;
     return mat;
   });
 

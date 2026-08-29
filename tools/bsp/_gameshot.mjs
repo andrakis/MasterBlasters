@@ -22,19 +22,24 @@ await p.evaluate(() => {
   const start = [...document.querySelectorAll('button')].find((b) => /start|fight|play/i.test(b.textContent));
   if (start) start.click();
 });
-await p.waitForTimeout(3000);
-// take pointer control and turn, so the shot is not stuck at the shim's yaw 0
-const canvas = await p.$('canvas');
-if (canvas) {
-  const box = await canvas.boundingBox();
-  await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await p.waitForTimeout(400);
-  const turn = Number(process.argv[4] ?? 0);
-  for (let i = 0; i < 20; i++) { await p.mouse.move(box.x + box.width / 2 + turn / 20 * (i + 1), box.y + box.height / 2); await p.waitForTimeout(25); }
-}
 await p.waitForTimeout(2500);
-const probe = await p.evaluate(() => (window.__mbProbe ? window.__mbProbe() : null));
-console.log('frame:', probe ? JSON.stringify({ mapId: probe.mapId, tick: probe.tick, players: probe.players?.length ?? probe.playerCount }) : 'no probe');
+// Keyboard only — headless pointer lock is unreliable. 'c' toggles the
+// third-person camera, which pulls back far enough to read the arena.
+const keys = (process.argv[5] ?? '').split(',').filter(Boolean);
+for (const k of keys) {
+  if (k.startsWith('hold:')) {
+    const [, key, ms] = k.split(':');
+    await p.keyboard.down(key);
+    await p.waitForTimeout(Number(ms));
+    await p.keyboard.up(key);
+  } else {
+    await p.keyboard.press(k);
+    await p.waitForTimeout(300);
+  }
+}
+await p.waitForTimeout(1500);
+const cam = await p.evaluate(() => window.__mbCam ?? null);
+console.log('cam:', JSON.stringify(cam));
 if (errs.length) console.log('ERRORS:\n' + errs.slice(0, 10).join('\n'));
 const s = await p.context().newCDPSession(p);
 const { data } = await s.send('Page.captureScreenshot', { format: 'png' });

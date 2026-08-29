@@ -112,6 +112,56 @@ mb_columns, end to end:
   mb_egyptarena / mb_pirates will need the DISPINFO lump.
 - `func_*` brush entities are grouped by model but not animated — mb_pirates'
   24 `func_tracktrain` / 12 `func_door_rotating` need hand-authored `mover` defs.
-- A spawn's `yaw` is applied by the sim (world.ts) but the local prediction shim
-  starts at yaw 0 and the first `UserCmd` overwrites it, so the player does not
-  face their spawn direction. Pre-existing; not an artefact of conversion.
+- ~~spawn yaw not applied~~ FIXED, see below.
+
+## Playability pass (2026-08-29)
+
+mb_columns is playable solo. `test/recoveredMaps.test.ts` asserts the things that
+make a recovered map playable rather than eyeballing them: every spawn lands on
+solid ground within 3 m, no spawn is buried in geometry, walking off a deck reaches
+the void, `killY` sits below every deck, spawns face the arena, and pickups fall
+from above the decks.
+
+Three real bugs fixed on the way:
+
+1. **Spawn yaw was clobbered every tick.** `world.ts` applied `NEUTRAL_CMD` when a
+   human player had sent no input, and `NEUTRAL_CMD.yaw` is 0 — so `respawn()`'s
+   `p.yaw = best.yaw` survived exactly zero ticks and every idle player snapped to
+   face -Z. Now look only moves when there is real input (bot or human). This was a
+   pre-existing sim bug; it only became visible because the recovered spawns are the
+   first ones whose facing actually matters.
+2. **The prediction shim never adopted the spawn facing.** It owns look direction
+   and started at yaw 0 regardless. It now adopts the sim's yaw once per life.
+   `AuthLocal` carries `yaw` for this.
+3. **The yaw conversion formula was wrong.** It was derived from `crusher.ts`'s
+   spawn table, which disagrees with the engine. The authority is `aimDir()` in
+   `sim/combat.ts`: forward is `(-sin yaw, -cos yaw)`, so yaw 0 faces **-Z**.
+   Correct conversion is `yaw = sourceYaw - 90 deg`.
+   *Note for later:* `crusher.ts`'s z-axis spawns (`z: 4, yaw: PI` and
+   `z: -4, yaw: 0`) face outward under `aimDir`. Hand-authored data, left alone.
+
+### Placeholder policy
+`tools/bsp/lib/placeholder.mjs`. Two cases, two answers:
+- **void** — `HALFLIFE/BLACK` is a Valve material that is literally flat black.
+  Regenerating "black" is not shipping Valve's asset, so this is a correct
+  reimplementation and it renders unlit and pure black.
+- **placeholder** — anything else we cannot ship gets magenta/black checks with a
+  yellow diagonal, rendered unlit so it stays loud. A silent black surface reads as
+  a rendering bug; it did, and it cost a debugging round.
+
+Currently only `PROPS/WOODCRATE003D` (3 `func_physbox` crates) takes a placeholder.
+
+### Why the columns go black — NOT a bug
+All 120 `light` entities sit between y = 8.9 m and 15 m, with `_quadratic_attn 1`.
+The column shafts are textured over their full -16..62 m span but receive no light
+outside that band:
+
+| column height | mean linear luxel |
+|---|---|
+| 0..24 m | 120-200 |
+| 24..32 m | 18 |
+| 40..64 m | 2-5 |
+| -16..0 m | 4-8 |
+
+That is the original 2007 look: the arena floats in a lit band and the columns
+recede into the void. Only affects the fidelity viewer — the game re-lights.

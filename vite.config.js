@@ -4,6 +4,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { attachSignaling } from './server/signaling.js';
 
+var port = process.env.PORT || 5182; // 5184 = UNDERCLOUD, 5185 = Sanctuary
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Same-origin WebRTC signaling in dev: attach the /signal WebSocket route to
@@ -23,14 +25,18 @@ const signaling = {
 export default defineConfig({
   plugins: [react(), signaling],
   server: {
-    port: 5181,
+    port: port,
+    // fail loudly instead of hopping to the next port — a silent hop once put
+    strictPort: true,
+    host: true,
+    allowedHosts: ['localhost', '.code.stargazer.onl', '.code.home.stargazer.onl'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
   preview: {
-    port: 4181,
+    port: port - 1000,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',

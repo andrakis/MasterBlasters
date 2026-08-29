@@ -77,15 +77,18 @@ for (const b of bsp.brushes()) {
 }
 
 // --- spawns -----------------------------------------------------------------
-// Yaw conversion, derived rather than guessed:
+// Yaw conversion, derived against the sim's own aimDir() in sim/combat.ts --
+// which is authoritative, being what weapons fire along and bots aim with:
 //   Source facing  = (cos S, sin S) over its (x, y)
 //   our facing     = (cos S, -sin S) over (x, z), since conv() negates y
-//   the sim's yaw Y gives facing (-sin Y, cos Y)   [see crusher.ts spawn table]
-// Solving both gives Y = -(S + 90 deg).
+//   sim yaw Y gives facing (-sin Y, -cos Y)        [aimDir, combat.ts]
+// Solving gives Y = S - 90 deg.
+// (Note: crusher.ts's z-axis spawns disagree with aimDir and face outward. That
+// is pre-existing hand-authored data, not the convention -- do not copy it.)
 const spawnPoints = spawnEnts.map((e) => {
   const p = shift(conv(e.origin.split(/\s+/).map(Number)));
   const srcYaw = e.angles ? Number(e.angles.split(/\s+/)[1]) || 0 : 0;
-  let yaw = -(srcYaw + 90) * Math.PI / 180;
+  let yaw = (srcYaw - 90) * Math.PI / 180;
   // normalise to (-PI, PI] so the numbers read like the hand-authored maps
   yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
   return {

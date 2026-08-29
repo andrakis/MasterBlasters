@@ -245,6 +245,8 @@ export interface AuthLocal {
   grounded: boolean;
   jetting: boolean;
   alive: boolean;
+  /** the sim's yaw for this player — set from the spawn point on (re)spawn */
+  yaw: number;
   tick: number;
   cmdSeq: number;
 }
@@ -261,6 +263,7 @@ export function getAuthoritativeLocal(): AuthLocal | null {
     grounded: p[o + P.GROUNDED] > 0.5,
     jetting: p[o + P.JETTING] > 0.5,
     alive: p[o + P.ALIVE] > 0.5,
+    yaw: p[o + P.YAW],
     tick: latest.tick,
     cmdSeq: p[o + P.CMD_SEQ],
   };

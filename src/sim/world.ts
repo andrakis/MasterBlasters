@@ -277,11 +277,17 @@ export class World {
       friendlyFire: this.mode.friendlyFire,
     };
     for (const p of this.players) {
+      const human = p.bot ? undefined : this.humanCmds.get(p.id);
       const cmd = p.bot
         ? stepBot(p, this.botStates.get(p.id)!, botCtx)
-        : this.humanCmds.get(p.id) ?? NEUTRAL_CMD;
-      p.yaw = cmd.yaw;
-      p.pitch = cmd.pitch;
+        : human ?? NEUTRAL_CMD;
+      // Look only moves when there is real input. NEUTRAL_CMD carries yaw 0, so
+      // applying it unconditionally snapped every idle player to face -Z and
+      // destroyed the spawn facing one tick after respawn().
+      if (p.bot || human) {
+        p.yaw = cmd.yaw;
+        p.pitch = cmd.pitch;
+      }
       p.lastCmdSeq = cmd.seq;
       if (cmd.weapon >= 0 && cmd.weapon < WEAPONS.length && p.ammo[cmd.weapon] !== 0) {
         p.weapon = cmd.weapon;
