@@ -242,3 +242,100 @@ export function hullOf(planes) {
   const axisAligned = planes.length > 0 && planes.every((p) => p.n.filter((v) => Math.abs(v) > 1e-4).length === 1);
   return { verts: V, mins, maxs, axisAligned, degenerate: V.length < 4 };
 }
+
+// ------------------------------------------------------------- displacements
+// A displacement is a subdivided, offset "skin" stretched over one quad face of
+// a brush. Source stores the flat quad in the normal face lumps and the offsets
+// separately, so a reader that ignores these lumps silently loses whole terrain
+// surfaces (arches, dunes, cliffs) while everything still looks structurally
+// fine — which is exactly what happened before this existed.
+//
+// Collision is unaffected: the brush behind the displacement still contributes
+// its AABB to the MapDef, so this is purely a rendering gap being closed.
+
+export const DISP_LUMP = { INFO: 26, VERTS: 33, TRIS: 48 };
+
+/** ddispinfo_t — 176 bytes in VBSP v20. Only the leading fields are decoded. */
+export function readDispInfos(bsp) {
+  const { ofs, len } = bsp.lump(DISP_LUMP.INFO), b = bsp.buf, out = [];
+  for (let i = 0; i < len / 176; i++) {
+    const o = ofs + i * 176;
+    out.push({
+      startPosition: [b.readFloatLE(o), b.readFloatLE(o + 4), b.readFloatLE(o + 8)],
+      vertStart: b.readInt32LE(o + 12),
+      triStart: b.readInt32LE(o + 16),
+      power: b.readInt32LE(o + 20),
+      contents: b.readInt32LE(o + 32),
+      mapFace: b.readUInt16LE(o + 36),
+    });
+  }
+  return out;
+}
+
+/** CDispVert — 20 bytes: a unit direction, a distance along it, and a blend alpha. */
+export function readDispVerts(bsp) {
+  const { ofs, len } = bsp.lump(DISP_LUMP.VERTS), b = bsp.buf;
+  const n = len / 20;
+  const vec = new Float32Array(n * 3), dist = new Float32Array(n), alpha = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = ofs + i * 20;
+    vec[i * 3] = b.readFloatLE(o); vec[i * 3 + 1] = b.readFloatLE(o + 4); vec[i * 3 + 2] = b.readFloatLE(o + 8);
+    dist[i] = b.readFloatLE(o + 12);
+    alpha[i] = b.readFloatLE(o + 16);
+  }
+  return { count: n, vec, dist, alpha };
+}
+
+/**
+ * Build one displacement's grid in Source space.
+ *
+ * `poly` is the face's 4 corners. `startPosition` identifies which corner the
+ * grid starts from — the face winding alone does not, so the corners must be
+ * rotated to match or the surface comes out mirrored and discontinuous against
+ * its neighbours.
+ *
+ * Returns flat grid positions plus a triangle list. Diagonals alternate by
+ * (i+j) parity, which is what vbsp does; a fixed diagonal leaves visible
+ * directional banding on curved surfaces.
+ */
+export function buildDisplacement(disp, poly, dispVerts) {
+  if (poly.length !== 4) return null;
+  const size = (1 << disp.power) + 1;
+
+  // rotate corners so index 0 is the one nearest startPosition
+  let first = 0, best = Infinity;
+  for (let i = 0; i < 4; i++) {
+    const d = (poly[i][0] - disp.startPosition[0]) ** 2
+      + (poly[i][1] - disp.startPosition[1]) ** 2
+      + (poly[i][2] - disp.startPosition[2]) ** 2;
+    if (d < best) { best = d; first = i; }
+  }
+  const c = [0, 1, 2, 3].map((k) => poly[(first + k) % 4]);
+
+  const positions = new Float32Array(size * size * 3);
+  for (let i = 0; i < size; i++) {
+    const fi = i / (size - 1);
+    for (let j = 0; j < size; j++) {
+      const fj = j / (size - 1);
+      const idx = i * size + j;
+      const dv = disp.vertStart + idx;
+      const d = dispVerts.dist[dv];
+      for (let a = 0; a < 3; a++) {
+        // bilinear across the quad: c0->c1 and c3->c2 along i, blended along j
+        const p0 = c[0][a] + (c[1][a] - c[0][a]) * fi;
+        const p1 = c[3][a] + (c[2][a] - c[3][a]) * fi;
+        positions[idx * 3 + a] = p0 + (p1 - p0) * fj + dispVerts.vec[dv * 3 + a] * d;
+      }
+    }
+  }
+
+  const indices = [];
+  for (let i = 0; i < size - 1; i++) {
+    for (let j = 0; j < size - 1; j++) {
+      const a = i * size + j, b2 = a + 1, cc = (i + 1) * size + j + 1, d = (i + 1) * size + j;
+      if ((i + j) & 1) indices.push(a, b2, cc, a, cc, d);
+      else indices.push(a, b2, d, b2, cc, d);
+    }
+  }
+  return { size, positions, indices, alphaStart: disp.vertStart };
+}

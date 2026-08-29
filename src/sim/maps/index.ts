@@ -10,6 +10,7 @@ import { mbcolumns } from './mbColumns.ts';
 // worth keeping side by side.
 import { mbquake2007 } from './mbQuake2007.ts';
 import { mboutpost } from './mbOutpost.ts';
+import { mbegyptarena } from './mbEgyptarena.ts';
 
 export const MAPS: Record<string, MapDef> = {
   [testArena.id]: testArena,
@@ -20,9 +21,10 @@ export const MAPS: Record<string, MapDef> = {
   [mbcolumns.id]: mbcolumns,
   [mbquake2007.id]: mbquake2007,
   [mboutpost.id]: mboutpost,
+  [mbegyptarena.id]: mbegyptarena,
 };
 
 export const MAP_LIST: MapDef[] = [
   testArena, moontop, crusher, quake, hyrule,
-  mbcolumns, mbquake2007, mboutpost,
+  mbcolumns, mbquake2007, mboutpost, mbegyptarena,
 ];

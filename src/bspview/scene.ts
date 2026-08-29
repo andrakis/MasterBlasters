@@ -5,7 +5,8 @@ import * as THREE from 'three';
 export type SceneMaterial = {
   name: string; file: string | null; width: number; height: number;
   transparent: boolean; tool: boolean; stock: boolean; missing: boolean;
-  generated?: boolean; kind?: 'texture' | 'void' | 'placeholder'; shader: string | null;
+  generated?: boolean; kind?: 'texture' | 'void' | 'placeholder' | 'cc0' | 'generated';
+  note?: string | null; shader: string | null;
 };
 export type SceneGroup = {
   model: number; material: number;
@@ -36,6 +37,11 @@ export async function loadMapScene(base: string): Promise<MapScene> {
   return res.json();
 }
 
+/** Shared stand-ins live at a repo-absolute path; per-map assets are relative. */
+export function assetUrl(base: string, file: string) {
+  return file.startsWith('/') ? file : `${base}/${file}`;
+}
+
 function texture(url: string, loader: THREE.TextureLoader) {
   const t = loader.load(url);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -63,7 +69,7 @@ export function buildScene(scene: MapScene, base: string): BuiltScene {
 
   const materials = scene.materials.map((m) => {
     const mat = new THREE.MeshBasicMaterial({
-      map: m.file ? texture(`${base}/${m.file}`, loader) : null,
+      map: m.file ? texture(assetUrl(base, m.file), loader) : null,
       color: 0xffffff,
       transparent: m.transparent,
       alphaTest: m.transparent ? 0.5 : 0,
@@ -78,7 +84,12 @@ export function buildScene(scene: MapScene, base: string): BuiltScene {
     mat.userData.kind = m.kind ?? 'texture';
     // the void seal takes no light (it IS the void); the placeholder takes none
     // either, so it stays uniformly loud instead of fading into a dark corner
+    // cc0/generated stand-ins are real surfaces and take the bake like any other;
+    // only the void seal and the loud placeholder opt out
     if (m.kind === 'void' || m.kind === 'placeholder') mat.lightMap = null;
+    // keep a handle: MeshBasicMaterial MULTIPLIES by the lightmap, so turning it
+    // "off" means detaching it. Setting lightMapIntensity to 0 renders black.
+    mat.userData.bakeMap = mat.lightMap;
     return mat;
   });
 
@@ -179,7 +190,7 @@ export function buildModel(model: ModelJson, base: string): BuiltScene {
   const loader = new THREE.TextureLoader();
   const materials = model.materials.map((m) => {
     const mat = new THREE.MeshStandardMaterial({
-      map: m.file ? texture(`${base}/${m.file}`, loader) : null,
+      map: m.file ? texture(assetUrl(base, m.file), loader) : null,
       color: 0xffffff,
       roughness: 0.7,
       metalness: 0.05,

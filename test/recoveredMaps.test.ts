@@ -13,9 +13,10 @@ import { aimDir } from '../src/sim/combat.ts';
 import { mbcolumns } from '../src/sim/maps/mbColumns.ts';
 import { mbquake2007 } from '../src/sim/maps/mbQuake2007.ts';
 import { mboutpost } from '../src/sim/maps/mbOutpost.ts';
+import { mbegyptarena } from '../src/sim/maps/mbEgyptarena.ts';
 
 /** Every map recovered by tools/bsp/bsp2mapdef.mjs must clear the same bar. */
-const RECOVERED: MapDef[] = [mbcolumns, mbquake2007, mboutpost];
+const RECOVERED: MapDef[] = [mbcolumns, mbquake2007, mboutpost, mbegyptarena];
 
 const DT = 1 / 60;
 const IDLE = { moveX: 0, moveZ: 0, jumpEdge: false, jetHeld: false };

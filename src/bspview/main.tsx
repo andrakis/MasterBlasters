@@ -110,12 +110,14 @@ function MapView({ scene, mapdef, toggles }: { scene: MapScene; mapdef: MapDefJs
       const src = scene.materials[i];
       mat.map = toggles.textures ? (mat.userData.baseMap ?? null) : null;
       const kind = src.kind ?? 'texture';
-      if (kind === 'void') { mat.color.setHex(0x000000); mat.lightMapIntensity = 0; }
-      else if (kind === 'placeholder') { mat.color.setHex(0xffffff); mat.lightMapIntensity = 0; }
+      const bake = mat.userData.bakeMap ?? null;
+      if (kind === 'void') { mat.color.setHex(0x000000); mat.lightMap = null; }
+      else if (kind === 'placeholder') { mat.color.setHex(0xffffff); mat.lightMap = null; }
       else {
         mat.color.setHex(toggles.textures ? 0xffffff : 0xb0b0b0);
-        mat.lightMapIntensity = toggles.lightmap ? toggles.brightness : 0;
-        if (!toggles.lightmap) mat.color.multiplyScalar(0.55);
+        // detach rather than zero the intensity — basic materials multiply
+        mat.lightMap = toggles.lightmap ? bake : null;
+        mat.lightMapIntensity = toggles.brightness;
       }
       mat.wireframe = toggles.wireframe;
       mat.needsUpdate = true;

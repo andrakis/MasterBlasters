@@ -51,3 +51,28 @@ export function playfieldShift(spawnOriginsSource, scale = UNITS_TO_METERS) {
     world.reduce((s, p) => s + p[2], 0) / world.length,
   ];
 }
+
+/**
+ * A test for "this geometry belongs to the 3D skybox".
+ *
+ * Source builds a miniature copy of the world far from the playfield and renders
+ * it from a scaled-down camera as the backdrop. It is ordinary brushwork —
+ * including displacements — so no size or span filter catches it, and drawing it
+ * in place puts giant misplaced terrain around the level.
+ *
+ * We do not reproduce the trick, so the geometry is excluded outright. The
+ * reliable test is which region a point is nearer to.
+ *
+ * Returns a predicate over Source-space points, or null when the map has no
+ * sky_camera (most do not).
+ */
+export function makeSkyboxTest(entities) {
+  const cam = entities.find((e) => e.classname === 'sky_camera' && e.origin);
+  const spawns = entities.filter((e) => e.classname === 'info_player_deathmatch' && e.origin);
+  if (!cam || !spawns.length) return null;
+  const sky = cam.origin.split(/\s+/).map(Number);
+  const pts = spawns.map((e) => e.origin.split(/\s+/).map(Number));
+  const play = [0, 1, 2].map((i) => pts.reduce((s, p) => s + p[i], 0) / pts.length);
+  return (x, y, z) =>
+    Math.hypot(x - sky[0], y - sky[1], z - sky[2]) < Math.hypot(x - play[0], y - play[1], z - play[2]);
+}

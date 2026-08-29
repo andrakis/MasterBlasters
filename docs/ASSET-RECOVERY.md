@@ -276,3 +276,80 @@ crates; mb_quake's is the crates. All Valve assets, all correctly flagged.
   and 12 `func_door_rotating`) need displacements and hand-authored movers.
 - The recovered maps are **unplaytested for feel**. `killY -0.61` on mb_quake in
   particular is tight by design and wants a human on the keys.
+
+
+## Displacements + mb_egyptarena (2026-08-29)
+
+### Displacements
+A displacement is a subdivided, offset skin stretched over one quad face of a
+brush. The flat quad lives in the normal face lumps and the offsets live
+separately, so a reader that ignores them **silently loses whole terrain surfaces
+while the map still looks structurally fine** — which is what was happening.
+
+`tools/lib/bsp.mjs` now reads DISPINFO/DISP_VERTS and rebuilds the grid: corners
+rotated to match `startPosition` (the face winding alone does not identify the
+origin, and getting it wrong mirrors the surface against its neighbours),
+bilinear across the quad, offset along each vertex's own direction, diagonals
+alternating by (i+j) parity. Normals are accumulated from the triangles rather
+than taken from the face plane — the whole point is that the surface is not flat.
+
+Validated against the lumps rather than by eye: 288 displacements x 289 grid verts
+= 83,232, exactly the DISP_VERTS count; 288 x 512 tris = 147,456, exactly
+DISP_TRIS. Lightmap UVs project through `lightmapVecs` like any other face and
+were checked to land inside each face's own atlas rect.
+
+**All 64 of mb_outpost's displacements turned out to be 3D-skybox backdrop.** The
+skybox filter is now shared by both tools (`makeSkyboxTest`), because drawing that
+miniature in place rings the level with giant terrain.
+
+### Displacements do not collide, and that is fine *here*
+The sim collides against boxes; a heightfield is not one. mb_egyptarena gets away
+with it because its 137 displacements are the rocky arena floor at y -14.9..-10.3,
+**entirely below `killY` -0.61** — scenery you see on the way down. `bsp2mapdef`
+now checks this per map and prints a loud warning if any displacement surface sits
+above the kill plane, because there players would sink into the terrain.
+
+### The non-axis-aligned test: renders beautifully, collides badly
+mb_egyptarena is 87% angled brushwork (601 of 693) and the geometry recovers
+perfectly — angled wings, an octagonal tower, the eye-of-Horus pylon. Collision is
+the problem, and it is now measured at conversion time:
+
+| map | angled | AABB/brush volume (median / p90 / worst) |
+|---|---|---|
+| mb_columns | 0 | — |
+| mb_quake_2007 | 54 | 1.21x / 1.85x / 1.8x |
+| mb_outpost | 36 | 1.20x / 4.80x / 4.8x |
+| **mb_egyptarena** | **601** | **2.00x / 4.00x / 13.7x** |
+
+A median box is **twice the volume of its brush**, so players bump into air around
+the angled geometry. Toggle "MapDef boxes" in the viewer to see it directly. The
+fix is a decomposition — slicing each angled hull into a few tighter boxes along
+its longest axis — traded against platform count. Not done; it is a design call
+about how much collision budget a map deserves.
+
+### Stand-in textures
+`tools/textures/fetch-cc0.mjs` pulls a CC0 material from ambientCG and converts it
+in (decoding the JPEG through Playwright's canvas rather than adding a native image
+dependency). Provenance is recorded in `public/textures/cc0/CREDITS.md`.
+
+| Valve material | stand-in | source |
+|---|---|---|
+| `PROPS/WOODCRATE003D` | `crate.png` | ambientCG Planks021, CC0 1.0 |
+| `NATURE/BLENDROCKGRAVEL001A` | `rockgravel.png` | ambientCG Ground079S, CC0 1.0 |
+| `*water*` | generated ripple | ours |
+
+**There is no CC0 water texture**, on ambientCG or Poly Haven, because water in an
+engine is a shader — refraction, a normal map, a tint — not a diffuse image.
+Generating a ripple pattern is more honest than dressing up an "ice" or "puddle"
+photo as water. The first attempt used a few strong directional waves and aliased
+into hard stripes when the source UVs tiled it; it now sums eight low-amplitude
+trains at mixed angles.
+
+`NATURE/BLENDROCKGRAVEL001A` is a `WorldVertexTransition` blend of two textures
+driven by per-vertex alpha. We substitute a single layer. The alpha is available
+in DISP_VERTS if that is ever worth doing properly.
+
+### One more renderer bug
+`MeshBasicMaterial` **multiplies** by its lightmap, so `lightMapIntensity = 0`
+renders black rather than unlit. Turning the bake off means detaching the map.
+The viewer's "lightmap" toggle had been showing a black screen.

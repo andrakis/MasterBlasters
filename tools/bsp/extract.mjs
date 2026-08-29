@@ -9,12 +9,13 @@
 // attributes and a texture atlas. Runtime behaviour is left to our own sim.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
-import { Bsp, CONTENTS, SURF } from '../lib/bsp.mjs';
+import { Bsp, CONTENTS, SURF, readDispInfos, readDispVerts, buildDisplacement } from '../lib/bsp.mjs';
 import { readVtf } from '../lib/vtf.mjs';
 import { findMaterial } from '../lib/vmt.mjs';
 import { encodePng } from '../lib/png.mjs';
 import { missingTexture, voidTexture } from '../lib/placeholder.mjs';
-import { playfieldShift } from '../lib/sourceCoords.mjs';
+import { findSubstitute } from '../lib/substitutes.mjs';
+import { playfieldShift, makeSkyboxTest } from '../lib/sourceCoords.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };
@@ -36,6 +37,8 @@ const bsp = new Bsp(bspPath);
 const planes = bsp.planes(), texinfo = bsp.texinfo(), texdata = bsp.texdata();
 const faces = bsp.faces(), verts = bsp.vertexes(), edges = bsp.edges(), surfedges = bsp.surfedges();
 const models = bsp.models(), ents = bsp.entities();
+const dispInfos = readDispInfos(bsp);
+const dispVerts = readDispVerts(bsp);
 
 const lighting = bsp.lump(8); // LUMP_LIGHTING, ColorRGBExp32
 
@@ -46,6 +49,9 @@ const lighting = bsp.lump(8); // LUMP_LIGHTING, ColorRGBExp32
 const spawnOrigins = ents.filter((e) => e.classname === 'info_player_deathmatch' && e.origin)
   .map((e) => e.origin.split(/\s+/).map(Number));
 const SHIFT = playfieldShift(spawnOrigins, UNITS_TO_M);
+// The 3D skybox is a render trick we do not reproduce; drawing its miniature in
+// place would ring the level with giant terrain. Its displacements especially.
+const skyTest = makeSkyboxTest(ents);
 const toThree = (x, y, z) => [
   x * UNITS_TO_M - SHIFT[0], z * UNITS_TO_M - SHIFT[1], -y * UNITS_TO_M - SHIFT[2],
 ];
@@ -59,7 +65,7 @@ const VALVE_STOCK = /^(tools|halflife|props|dev|editor|debug|engine|effects|spri
 const materials = new Map(); // name -> {index, file, width, height, transparent, tool, stock}
 function materialFor(name) {
   if (materials.has(name)) return materials.get(name);
-  const rec = { index: materials.size, name, file: null, width: 128, height: 128, transparent: false, tool: isTool(name), stock: VALVE_STOCK.test(name), missing: false, generated: false, kind: 'texture', shader: null };
+  const rec = { index: materials.size, name, file: null, width: 128, height: 128, transparent: false, tool: isTool(name), stock: VALVE_STOCK.test(name), missing: false, generated: false, kind: 'texture', note: null, shader: null };
   materials.set(name, rec);
   if (rec.tool) return rec;
   const found = findMaterial(materialsRoot, name);
@@ -67,10 +73,19 @@ function materialFor(name) {
     rec.missing = true;
     rec.generated = true;
     // HALFLIFE/BLACK is flat black by definition — regenerate it rather than
-    // flag it missing. Anything else gets a loud placeholder.
+    // flag it missing.
     const isVoid = /^halflife[\/\\]black$/i.test(name);
-    const tex = isVoid ? voidTexture() : missingTexture();
-    rec.kind = isVoid ? 'void' : 'placeholder';
+    const sub = isVoid ? null : findSubstitute(name);
+    if (sub?.kind === 'cc0') {
+      // one shared file serves every map, so reference it rather than copy it
+      rec.kind = 'cc0';
+      rec.file = sub.file;
+      rec.note = sub.note;
+      return rec;
+    }
+    const tex = isVoid ? voidTexture() : sub?.generate ? sub.generate() : missingTexture();
+    rec.kind = isVoid ? 'void' : sub ? 'generated' : 'placeholder';
+    if (sub) rec.note = sub.note;
     rec.width = tex.width; rec.height = tex.height;
     const file = `${name.replace(/[\/\\]/g, '_').toLowerCase()}.png`;
     writeFileSync(join(outDir, 'textures', file), encodePng(tex.pixels, tex.width, tex.height));
@@ -166,11 +181,63 @@ for (let m = 1; m < models.length; m++)
     if (i < faceOwner.length) faceOwner[i] = m;
 
 const groups = new Map(); // key `${model}:${matIndex}` -> buffers
-let skipped = { tool: 0, nodraw: 0, disp: 0, degenerate: 0 };
+let skipped = { tool: 0, nodraw: 0, disp: 0, skybox: 0, degenerate: 0 };
+let dispFaces = 0, dispTris = 0;
+
+/**
+ * A displacement contributes a grid, not a polygon fan. UVs still come from the
+ * texinfo vectors applied to the DISPLACED world position — the texture projects
+ * through space, exactly as it does for a flat face — and the lightmap grid
+ * lines up with the vertex grid because vbsp sizes it from the same power.
+ *
+ * Normals are accumulated from the triangles rather than taken from the face
+ * plane, which is the whole point: a displaced surface is not flat.
+ */
+function emitDisplacement(g, f, ti, td, rect, built) {
+  const { size, positions, indices } = built;
+  const base = g.pos.length / 3;
+  const nrm = new Float32Array(size * size * 3);
+  for (let t = 0; t < indices.length; t += 3) {
+    const [ia, ib, ic] = [indices[t], indices[t + 1], indices[t + 2]];
+    const ax = positions[ia * 3], ay = positions[ia * 3 + 1], az = positions[ia * 3 + 2];
+    const e1 = [positions[ib * 3] - ax, positions[ib * 3 + 1] - ay, positions[ib * 3 + 2] - az];
+    const e2 = [positions[ic * 3] - ax, positions[ic * 3 + 1] - ay, positions[ic * 3 + 2] - az];
+    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    for (const v of [ia, ib, ic]) for (let a = 0; a < 3; a++) nrm[v * 3 + a] += n[a];
+  }
+  for (let i = 0; i < size * size; i++) {
+    const px = positions[i * 3], py = positions[i * 3 + 1], pz = positions[i * 3 + 2];
+    const [x, y, z] = toThree(px, py, pz);
+    g.pos.push(x, y, z);
+    const [nx, ny, nz] = toThree(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]);
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    g.normal.push(nx / nl, ny / nl, nz / nl);
+    const tv = ti.textureVecs;
+    g.uv.push(
+      (px * tv[0][0] + py * tv[0][1] + pz * tv[0][2] + tv[0][3]) / td.width,
+      1 - (px * tv[1][0] + py * tv[1][1] + pz * tv[1][2] + tv[1][3]) / td.height,
+    );
+    if (rect) {
+      const lv = ti.lightmapVecs;
+      const lu = (px * lv[0][0] + py * lv[0][1] + pz * lv[0][2] + lv[0][3]) - f.lmMins[0];
+      const lvv = (px * lv[1][0] + py * lv[1][1] + pz * lv[1][2] + lv[1][3]) - f.lmMins[1];
+      g.uv2.push(
+        (rect.x + Math.max(0, Math.min(rect.w, lu))) / atlasW,
+        1 - (rect.y + Math.max(0, Math.min(rect.h, lvv))) / atlasH,
+      );
+    } else {
+      g.uv2.push(0.5 / atlasW, 1 - 0.5 / atlasH);
+    }
+  }
+  // toThree negates Y and so flips handedness; reverse winding to match
+  for (let t = 0; t < indices.length; t += 3) {
+    g.idx.push(base + indices[t], base + indices[t + 2], base + indices[t + 1]);
+    dispTris++;
+  }
+}
 
 for (let fi = 0; fi < faces.length; fi++) {
   const f = faces[fi];
-  if (f.dispinfo >= 0) { skipped.disp++; continue; }   // displacements: separate lump, not handled
   if (f.texinfo < 0) { skipped.degenerate++; continue; }
   const ti = texinfo[f.texinfo];
   if (ti.flags & (SURF.NODRAW | SURF.SKIP | SURF.HINT | SURF.TRIGGER)) { skipped.nodraw++; continue; }
@@ -187,10 +254,23 @@ for (let fi = 0; fi < faces.length; fi++) {
     poly.push([verts[vi * 3], verts[vi * 3 + 1], verts[vi * 3 + 2]]);
   }
   if (poly.length < 3) { skipped.degenerate++; continue; }
+  if (skyTest) {
+    let cx = 0, cy = 0, cz = 0;
+    for (const p of poly) { cx += p[0]; cy += p[1]; cz += p[2]; }
+    if (skyTest(cx / poly.length, cy / poly.length, cz / poly.length)) { skipped.skybox++; continue; }
+  }
 
   const key = `${faceOwner[fi]}:${mat.index}`;
   let g = groups.get(key);
   if (!g) { g = { model: faceOwner[fi], material: mat.index, pos: [], uv: [], uv2: [], idx: [], normal: [] }; groups.set(key, g); }
+
+  if (f.dispinfo >= 0) {
+    const built = buildDisplacement(dispInfos[f.dispinfo], poly, dispVerts);
+    if (!built) { skipped.disp++; continue; }
+    emitDisplacement(g, f, ti, texdata[ti.texdata], lmRects[fi], built);
+    dispFaces++;
+    continue;
+  }
 
   const pl = planes[f.planenum];
   const nrm = f.side ? [-pl.n[0], -pl.n[1], -pl.n[2]] : pl.n;
@@ -260,10 +340,11 @@ const out = {
   unitsToMeters: UNITS_TO_M,
   playfieldShift: SHIFT,
   lightmap: { file: 'lightmap.png', width: atlasW, height: atlasH, brightness: LM_BRIGHTNESS },
+  displacements: { faces: dispFaces, tris: dispTris },
   materials: [...materials.values()].map((m) => ({
     name: m.name, file: m.file, width: m.width, height: m.height,
     transparent: m.transparent, tool: m.tool, stock: m.stock, missing: m.missing,
-    generated: m.generated, kind: m.kind, shader: m.shader,
+    generated: m.generated, kind: m.kind, note: m.note ?? null, shader: m.shader,
   })),
   models: models.map((m) => ({ mins: m.mins, maxs: m.maxs, origin: m.origin })),
   groups: [...groups.values()].map((g) => ({
@@ -289,5 +370,6 @@ console.log(`${mapName}: ${faces.length} faces -> ${tris} tris in ${out.groups.l
 console.log(`  materials: ${materials.size} (${[...materials.values()].filter((m) => m.tool).length} tool, ${[...materials.values()].filter((m) => m.missing).length} missing, ${[...materials.values()].filter((m) => m.stock && !m.tool).length} stock Valve)`);
 console.log(`  lightmap atlas: ${atlasW}x${atlasH}  (${order.length}/${faces.length} faces lit)`);
 console.log(`  brushes: ${brushes.length}  entities: ${entities.length}`);
+console.log(`  displacements: ${dispFaces} faces -> ${dispTris} tris`);
 console.log(`  skipped: ${JSON.stringify(skipped)}`);
 console.log(`  bounds (m): ` + bounds.map(([lo, hi], i) => `${'xyz'[i]} ${lo.toFixed(1)}..${hi.toFixed(1)} (${(hi - lo).toFixed(1)})`).join('  '));

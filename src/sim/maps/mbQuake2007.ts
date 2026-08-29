@@ -14,7 +14,7 @@ import type { MapDef } from './types.ts';
 
 export const mbquake2007: MapDef = {
   id: 'mb_quake_2007',
-  name: 'MB QUAKE (2007)',
+  name: 'MBQUAKE',
   platforms: [
     { x: 0, y: -2.44, z: 0, w: 13, h: 3.25, d: 6.5 },
     { x: 0, y: -0.41, z: 3.66, w: 13, h: 0.81, d: 0.81 },

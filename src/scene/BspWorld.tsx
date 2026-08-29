@@ -14,7 +14,7 @@ import * as THREE from 'three';
 type SceneMaterial = {
   name: string; file: string | null; width: number; height: number;
   transparent: boolean; tool: boolean; missing: boolean;
-  kind?: 'texture' | 'void' | 'placeholder';
+  kind?: 'texture' | 'void' | 'placeholder' | 'cc0' | 'generated';
 };
 type SceneGroup = { model: number; material: number; pos: number[]; normal: number[]; uv: number[]; uv2: number[]; idx: number[] };
 type BspScene = {
@@ -78,7 +78,8 @@ function build(scene: BspScene, base: string) {
   lightmap.generateMipmaps = false;
 
   const materials = scene.materials.map((m) => {
-    const map = m.file ? loader.load(`${base}/${m.file}`) : null;
+    // shared CC0 / generated stand-ins live at a repo-absolute path
+    const map = m.file ? loader.load(m.file.startsWith('/') ? m.file : `${base}/${m.file}`) : null;
     if (map) {
       map.wrapS = map.wrapT = THREE.RepeatWrapping;
       map.colorSpace = THREE.SRGBColorSpace;

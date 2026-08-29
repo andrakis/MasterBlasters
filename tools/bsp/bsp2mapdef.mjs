@@ -9,8 +9,8 @@
 // The faithful geometry lives in the viewer (extract.mjs), not here.
 import { writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { Bsp, CONTENTS } from '../lib/bsp.mjs';
-import { sourceYawToSimYaw, playfieldShift } from '../lib/sourceCoords.mjs';
+import { Bsp, CONTENTS, readDispInfos, readDispVerts, buildDisplacement } from '../lib/bsp.mjs';
+import { sourceYawToSimYaw, playfieldShift, makeSkyboxTest } from '../lib/sourceCoords.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i < 0 ? d : argv[i + 1]; };
@@ -47,26 +47,43 @@ const [cx, deckY, cz] = playfieldShift(spawnEnts.map((e) => e.origin.split(/\s+/
 const shift = (p) => [p[0] - cx, p[1] - deckY, p[2] - cz];
 
 // --- 3D skybox --------------------------------------------------------------
-// A sky_camera marks a miniature copy of the world built far from the playfield
-// and rendered as the backdrop. It is real brushwork, so no size or span filter
-// catches it; the reliable test is which region a brush is nearer to.
-const skyCam = ents.find((e) => e.classname === 'sky_camera' && e.origin);
-const skyPos = skyCam ? skyCam.origin.split(/\s+/).map(Number) : null;
-const spawnCentroidSrc = spawnEnts.length
-  ? spawnEnts.map((e) => e.origin.split(/\s+/).map(Number))
-      .reduce((a, p) => [a[0] + p[0] / spawnEnts.length, a[1] + p[1] / spawnEnts.length, a[2] + p[2] / spawnEnts.length], [0, 0, 0])
-  : null;
-const inSkybox = (mins, maxs) => {
-  if (!skyPos || !spawnCentroidSrc) return false;
-  const c = [0, 1, 2].map((i) => (mins[i] + maxs[i]) / 2);
-  const dSky = Math.hypot(c[0] - skyPos[0], c[1] - skyPos[1], c[2] - skyPos[2]);
-  const dPlay = Math.hypot(c[0] - spawnCentroidSrc[0], c[1] - spawnCentroidSrc[1], c[2] - spawnCentroidSrc[2]);
-  return dSky < dPlay;
-};
+const skyTest = makeSkyboxTest(ents);
+const inSkybox = (mins, maxs) => skyTest
+  ? skyTest((mins[0] + maxs[0]) / 2, (mins[1] + maxs[1]) / 2, (mins[2] + maxs[2]) / 2)
+  : false;
 
 // --- platforms --------------------------------------------------------------
 const platforms = [];
 const dropped = { shell: 0, clip: 0, water: 0, thin: 0, skybox: 0, angled: 0 };
+const overshoot = [];
+
+/**
+ * How much bigger a brush's AABB is than the brush itself, as a volume ratio.
+ *
+ * This is the cost of the box-collision model on rotated geometry, and it is
+ * otherwise invisible: the map renders perfectly while players bump into air.
+ * Sampled on a fixed lattice rather than randomly so the tool stays deterministic.
+ */
+function aabbOvershoot(b) {
+  const size = [0, 1, 2].map((a) => b.maxs[a] - b.mins[a]);
+  if (size.some((v) => v <= 0)) return 1;
+  const N = 12;
+  let inside = 0;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+    const p = [
+      b.mins[0] + size[0] * (i + 0.5) / N,
+      b.mins[1] + size[1] * (j + 0.5) / N,
+      b.mins[2] + size[2] * (k + 0.5) / N,
+    ];
+    let ok = true;
+    for (const sd of b.sides) {
+      const q = sd.plane;
+      if (q.n[0] * p[0] + q.n[1] * p[1] + q.n[2] * p[2] - q.d > 0.02) { ok = false; break; }
+    }
+    if (ok) inside++;
+  }
+  return inside ? (N * N * N) / inside : 1;
+}
 const angledNotes = [];
 
 for (const b of bsp.brushes()) {
@@ -85,6 +102,7 @@ for (const b of bsp.brushes()) {
   if (!b.axisAligned) {
     dropped.angled++;
     angledNotes.push({ c, size });
+    overshoot.push(aabbOvershoot(b));
   }
   platforms.push({
     x: +c[0].toFixed(2), y: +c[1].toFixed(2), z: +c[2].toFixed(2),
@@ -171,6 +189,37 @@ const themeNote = dom.n
   ? `Palette derived from the map's own data: ${dom.n} x light "${dom.r} ${dom.g} ${dom.b}"\n  // and the mean texdata reflectivity of its ${refl.length} materials.`
   : 'Palette derived from mean texdata reflectivity; the map declares no light entities.';
 
+// --- displacement reachability ---------------------------------------------
+// Displacements render (extract.mjs) but contribute NO collision: the sim
+// collides against boxes, and a heightfield is not one. That is fine only while
+// the terrain sits below the kill plane, which is the case for mb_egyptarena --
+// its rocky floor is scenery you see on the way down. If a future map puts
+// walkable terrain above killY, players would sink into it, so say so loudly.
+const dispInfos = readDispInfos(bsp);
+let dispAboveKill = 0, dispTotal = 0;
+if (dispInfos.length) {
+  const dispVerts = readDispVerts(bsp);
+  const faces = bsp.faces(), verts = bsp.vertexes(), edges = bsp.edges(), surfedges = bsp.surfedges();
+  for (const f of faces) {
+    if (f.dispinfo < 0) continue;
+    const poly = [];
+    for (let e = 0; e < f.numedges; e++) {
+      const se2 = surfedges[f.firstedge + e];
+      const vi = se2 >= 0 ? edges[se2 * 2] : edges[-se2 * 2 + 1];
+      poly.push([verts[vi * 3], verts[vi * 3 + 1], verts[vi * 3 + 2]]);
+    }
+    if (poly.length !== 4) continue;
+    const c = [0, 1, 2].map((a) => poly.reduce((t, p) => t + p[a], 0) / 4);
+    if (skyTest && skyTest(c[0], c[1], c[2])) continue;
+    dispTotal++;
+    const built = buildDisplacement(dispInfos[f.dispinfo], poly, dispVerts);
+    if (!built) continue;
+    let top = -Infinity;
+    for (let i = 0; i < built.size * built.size; i++) top = Math.max(top, built.positions[i * 3 + 2]);
+    if (shift([0, top * SCALE, 0])[1] > killY) dispAboveKill++;
+  }
+}
+
 const out = `// ${mapId.toUpperCase()} — recovered from the 2007 HL2 mod BSP.
 //
 // GENERATED by tools/bsp/bsp2mapdef.mjs from maps/${basename(bspPath)}; see
@@ -224,8 +273,24 @@ if (jsonOut) {
 
 console.log(`${mapId} -> ${outPath}`);
 console.log(`  platforms: ${platforms.length} (${dropped.angled} squared off from angled brushes)`);
+if (overshoot.length) {
+  const o = overshoot.slice().sort((a, b) => a - b);
+  const med = o[o.length >> 1], p90 = o[(o.length * 0.9) | 0], worst = o[o.length - 1];
+  console.log(`     collision is looser than it looks: AABB/brush volume`
+    + ` median ${med.toFixed(2)}x, p90 ${p90.toFixed(2)}x, worst ${worst.toFixed(1)}x`);
+  if (med > 1.6) console.log(`     !! players will bump into air around the angled geometry`);
+}
 console.log(`  spawns: ${spawnPoints.length}  pickups: ${pickupSpots.length}  killY: ${killY.toFixed(2)}`);
 console.log(`  dropped: ${JSON.stringify(dropped)}`);
+if (dispTotal) {
+  console.log(`  displacements: ${dispTotal} (render-only, no collision)`);
+  if (dispAboveKill) {
+    console.log(`  !! ${dispAboveKill} displacement surface(s) sit ABOVE killY ${killY.toFixed(2)}.`);
+    console.log(`     Players will sink into them — this map needs terrain collision.`);
+  } else {
+    console.log(`     all below killY ${killY.toFixed(2)} — scenery, so no collision needed`);
+  }
+}
 const ext = [0, 1, 2].map((i) => {
   const k = 'xyz'[i], s = 'whd'[i];
   const lo = Math.min(...platforms.map((p) => p[k] - p[s] / 2));
