@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/arena.js @ 59bbaa8 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/arena.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/arena.js @ b0a5860 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/arena.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // arena.js - the flat byte-addressed memory of the c4bb machine.
 //
 // One Int32Array-backed arena replaces c4m's four malloc pools and raw
@@ -26,9 +26,13 @@ export const MEM_BASE = 0x1000;
 export const ARGS_RESERVE = 4096;
 
 export class Arena {
-  constructor(sizeBytes = 32 * 1024 * 1024) {
+  // A size, or a buffer to wrap: a SharedArrayBuffer lets a host on another
+  // thread read and write the mailbox rings while the machine runs.
+  constructor(sizeOrBuffer = 32 * 1024 * 1024) {
+    const buf = typeof sizeOrBuffer === 'number' ? new ArrayBuffer(sizeOrBuffer) : sizeOrBuffer;
+    const sizeBytes = buf.byteLength;
     this.size = sizeBytes;
-    this.buf = new ArrayBuffer(sizeBytes);
+    this.buf = buf;
     this.i32 = new Int32Array(this.buf);
     this.u8 = new Uint8Array(this.buf);
     this.dv = new DataView(this.buf);

@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/turbo.js @ 59bbaa8 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/turbo.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/turbo.js @ b0a5860 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/turbo.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // turbo.js - the fast engine: microcode compiled to JavaScript.
 //
 // The step engine (machine.js) interprets one microstep at a time so

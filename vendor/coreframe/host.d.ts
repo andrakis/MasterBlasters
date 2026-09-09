@@ -12,6 +12,8 @@ export interface HostOptions {
   slice?: number;
   /** a permuted opcode-name ROM (release builds); omit for the stock encoding */
   opnames?: string | null;
+  /** in-VM image attestation (default true): the guest hashes its own image and refuses to run on a mismatch; { bytes, hash } attests other bytes */
+  attest?: boolean | { bytes: Uint8Array; hash?: string | null };
 }
 export interface Host {
   output(): string;

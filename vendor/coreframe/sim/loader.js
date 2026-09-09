@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/loader.js @ 59bbaa8 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/loader.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/loader.js @ b0a5860 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/loader.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // loader.js - .c4r image loader for the c4bb machine.
 //
 // A direct port of c4l.c (the cleanest loader in the repo) for 32-bit
@@ -151,11 +151,15 @@ export function boot(machine, fwBytes, progBytes, argv, opts = {}) {
   for (const a of argvAddrs) { arena.write32(argPtr, a); argPtr += 4; }
 
   // heap bounds for the firmware allocator (1 MB stack reserve)
+  // (opts.reserve: host-owned bytes below the mailbox, outside the heap --
+  // where a host parks something the guest must see but never allocate over)
+  const reserveLen = (opts.reserve | 0) > 0 ? ((opts.reserve | 0) + 4095) & ~4095 : 0;
   const heapBase = (progImg.top + 4096) & ~4095;
-  const heapEnd = ((arena.stackTop - 1024 * 1024) & ~4095) - mboxLen;
+  const heapEnd = ((arena.stackTop - 1024 * 1024) & ~4095) - mboxLen - reserveLen;
   machine.dev.write32(HEAP_BASE, heapBase);
   machine.dev.write32(HEAP_END, heapEnd);
-  const mbox = mboxLen ? { base: heapEnd, len: mboxLen } : null;
+  const reserve = reserveLen ? { base: heapEnd, len: reserveLen } : null;
+  const mbox = mboxLen ? { base: heapEnd + reserveLen, len: mboxLen } : null;
   if (mbox) { machine.dev.mbox = mbox; arena.u8.fill(0, mbox.base, mbox.base + mbox.len); }
 
   // initial stack
@@ -176,7 +180,7 @@ export function boot(machine, fwBytes, progBytes, argv, opts = {}) {
   machine.regs[R.PC] = progImg.entryAddr;
   machine.upc = FETCH;
 
-  return { fwImg, progImg, argvBase, heapBase, heapEnd, mbox };
+  return { fwImg, progImg, argvBase, heapBase, heapEnd, mbox, reserve };
 }
 
 // Run to completion after boot(); returns the exit status. When a

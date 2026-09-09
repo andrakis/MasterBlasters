@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/mbox.js @ 59bbaa8 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/mbox.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/mbox.js @ b0a5860 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/mbox.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // mbox.js - the host's side of the mailbox (devices.js MBOX_*).
 //
 // Two rings of i32 frames in guest RAM, read and written straight
