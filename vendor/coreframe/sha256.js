@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/sha256.js @ b0a5860 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/sha256.js @ b89a635 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // sha256.js - a synchronous SHA-256 (WebCrypto's digest is async, and a host
 // boots synchronously). The same function, word for word, lives in C in
 // modules/cf_main.c: the guest recomputes this over the image the host parked
