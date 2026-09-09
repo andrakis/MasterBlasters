@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { TUNING } from './config.ts';
+import { MAPS } from './sim/maps/index.ts';
 import type { MatchSettings } from './protocol.ts';
 import type { HudInfo, RoundInfo } from './simClient.ts';
 import type { Score } from './sim/world.ts';
@@ -73,6 +74,11 @@ interface UiState extends SimState {
 let nextFeedId = 1;
 const FEED_TTL_MS = 5000;
 
+// `?map=<id>` preselects a map (the CoreFrame editor's Play button opens the
+// game this way after saving); unknown ids fall back to the default.
+const urlMap = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('map');
+const initialMapId = urlMap && urlMap in MAPS ? urlMap : 'mb_test';
+
 export const useStore = create<UiState>((set) => ({
   tick: 0,
   simTps: 0,
@@ -80,12 +86,12 @@ export const useStore = create<UiState>((set) => ({
   round: null,
   scores: [],
   names: [],
-  mapId: 'mb_test',
+  mapId: initialMapId,
   matchLive: false,
 
   appPhase: 'menu',
   settings: {
-    mapId: 'mb_test',
+    mapId: initialMapId,
     mode: 'lms',
     lives: TUNING.LIVES,
     botCount: 3,
