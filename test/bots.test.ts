@@ -47,10 +47,13 @@ test('Master beats Greenhorn across seeds (tiers are real skill)', () => {
     w.botStates.get(1)!.tier = 2; // Master
     w.botStates.get(2)!.tier = 0; // Greenhorn
     const human = w.players[0];
-    human.lives = 1;
-    human.y = w.map.killY - 5; // eliminate the dummy immediately
     const master = w.players[1];
     const green = w.players[2];
+    // eliminate the dummy with two real falls (stocks are the rules VM's, not ours to poke)
+    human.y = w.map.killY - 5;
+    w.step();
+    stepUntil(w, () => human.alive, 10 * CFG.TICK_HZ);
+    human.y = w.map.killY - 5;
     stepUntil(w, () => w.round.phase !== 'active', 240 * CFG.TICK_HZ);
     // whoever still stands (or holds more lives) took the round
     const masterScore = master.lives + (master.alive ? 1 : 0);

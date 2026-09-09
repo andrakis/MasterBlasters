@@ -66,14 +66,8 @@ export function makePrng(seed: number): Prng {
   return rng;
 }
 
-/** Derive a subsystem stream seed from the run seed: distinct golden-ratio offsets,
- *  avalanched, so streams are decorrelated even for adjacent run seeds. */
-export function deriveSeed(runSeed: number, streamIndex: number): number {
-  let h = (runSeed ^ Math.imul(streamIndex + 1, 0x9e3779b9)) | 0;
-  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  return (h ^ (h >>> 16)) | 0;
-}
+// deriveSeed moved into the CoreFrame VM (src/rules/mb_rules_core.c derive_seed):
+// the stream seeds arrive in the MATCH_START reply and only makePrng stays here.
 
 // ---------------------------------------------------------------------------
 // State hashing (TECH §3): FNV-1a over raw bit patterns. Hash the sim every

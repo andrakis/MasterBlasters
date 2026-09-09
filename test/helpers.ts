@@ -7,6 +7,23 @@ import type { MapDef } from '../src/sim/maps/types.ts';
 import { makeBoxes, type Box } from '../src/sim/maps/types.ts';
 import type { PlayerCore } from '../src/sim/types.ts';
 import { World } from '../src/sim/world.ts';
+import { readFileSync } from 'node:fs';
+import { VmRules, type VmAssets } from '../src/rules/vmRules.ts';
+
+// The rules VM, booted from the same files the browser fetches (public/coreframe).
+// One machine per World: boot is a few hundred cycles, so it is cheap.
+let vmAssets: VmAssets | null = null;
+export function testRules(): VmRules {
+  if (!vmAssets) {
+    const base = new URL('../public/coreframe/', import.meta.url);
+    vmAssets = {
+      ucSource: readFileSync(new URL('microcode.uc', base), 'utf8'),
+      fwBytes: new Uint8Array(readFileSync(new URL('fw.c4r', base))),
+      progBytes: new Uint8Array(readFileSync(new URL('mb_rules.c4r', base))),
+    };
+  }
+  return new VmRules(vmAssets);
+}
 
 export function makeTestPlayer(overrides: Partial<PlayerCore> = {}): PlayerCore {
   return {
@@ -61,7 +78,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
 /** New world with a live match, stepped through the countdown into active play. */
 export function liveWorld(overrides: Partial<MatchSettings> = {}): World {
   const settings = { ...DEFAULT_SETTINGS, ...overrides };
-  const w = new World(settings.seed);
+  const w = new World(settings.seed, testRules());
   w.apply({ type: 'config', ...settings });
   while (w.round.phase === 'countdown') w.step();
   return w;

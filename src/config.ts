@@ -51,6 +51,7 @@ export const TUNING = {
   // --- rounds & stocks -------------------------------------------------------
   LIVES: 4,
   ROUNDS_TO_WIN: 3,
+  KO_CREDIT_S: 5, // a fall within this many seconds of the last hit credits the attacker (rules VM)
   RESPAWN_S: 1.5,
   COUNTDOWN_S: 3,
   ROUND_END_S: 4,

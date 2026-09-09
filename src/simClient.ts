@@ -86,6 +86,7 @@ const pendingFx: SimEvent[] = [];
 // Client prediction: cmds sent but not yet folded into a snapshot (PlayerRig
 // replays these through the shared integrator on every rebase).
 const pendingCmds: UserCmd[] = [];
+let rulesDumpResolve: ((v: { frames: unknown[]; replies: unknown[] }) => void) | null = null;
 
 // The local player's most recent confirmed shot (viewmodel kick/swing timing).
 const lastLocalFire = { at: 0, weapon: 0 };
@@ -96,6 +97,8 @@ declare global {
   interface Window {
     __mbCmd?: (msg: Record<string, unknown>) => void;
     __mbProbe?: () => Record<string, unknown> | null;
+    /** DEV: the rules VM's frame log + replies (tools/verify-round.mjs input) */
+    __mbRoundLog?: () => Promise<{ frames: unknown[]; replies: unknown[] }>;
   }
 }
 
@@ -197,7 +200,13 @@ export function startSim(): void {
     };
   }
   worker = new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' });
+  if (typeof window !== 'undefined') {
+    window.__mbRoundLog = () => new Promise((res) => { rulesDumpResolve = res; worker?.postMessage({ type: 'rulesDump' }); });
+  }
   worker.onmessage = (e: MessageEvent<Frame>) => {
+    const raw = e.data as unknown as { type: string };
+    if (raw.type === 'rulesDump') { rulesDumpResolve?.(raw as unknown as { frames: unknown[]; replies: unknown[] }); rulesDumpResolve = null; return; }
+    if (raw.type === 'rulesError') { console.error('rules VM:', (raw as unknown as { message: string }).message); return; }
     const m = e.data;
     if (m.type !== 'frame') return;
     if (netRole === 'client') return; // clients live on snapshots, not the local worker

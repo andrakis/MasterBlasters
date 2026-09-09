@@ -3,15 +3,22 @@
 // tick boundary in arrival order. The sim itself never sees wall-clock time, only
 // tick counts — that property is what lets the same World class run on a phase-2
 // host unchanged.
+//
+// The rules authority is the CoreFrame VM (src/rules/vmRules.ts), booted here
+// beside the World before the first message is serviced; anything that arrives
+// earlier waits in `pending`.
 
 import { CFG } from './config.ts';
 import { World, type Command } from './sim/world.ts';
+import { fetchVmAssets, VmRules } from './rules/vmRules.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 
 const TICK_MS = 1000 / CFG.TICK_HZ;
 
-let world = new World(CFG.SEED);
+let world: World | null = null;
+let ready = false;
+const pending: unknown[] = [];
 let queue: Command[] = [];
 let paused = false;
 let started = false;
@@ -25,6 +32,7 @@ let tickWindow = 0;
 let windowStart = 0;
 
 function loop(): void {
+  const w = world!;
   const now = performance.now();
   if (last === 0) last = now;
   acc += now - last;
@@ -36,10 +44,10 @@ function loop(): void {
     let ran = 0;
     while (acc >= TICK_MS && ran < CFG.MAX_CATCHUP) {
       if (queue.length > 0) {
-        for (const cmd of queue) world.apply(cmd);
+        for (const cmd of queue) w.apply(cmd);
         queue.length = 0;
       }
-      world.step();
+      w.step();
       acc -= TICK_MS;
       ran++;
       tickWindow++;
@@ -54,7 +62,7 @@ function loop(): void {
     }
 
     if (ran > 0) {
-      const { msg, transfers } = world.pack();
+      const { msg, transfers } = w.pack();
       msg.simTps = tps;
       self.postMessage(msg, transfers);
     }
@@ -64,8 +72,7 @@ function loop(): void {
   setTimeout(loop, Math.max(0, TICK_MS - elapsed));
 }
 
-self.onmessage = (e: MessageEvent) => {
-  const m = e.data as { type: string } & Record<string, unknown>;
+function handle(m: { type: string } & Record<string, unknown>): void {
   switch (m.type) {
     case 'init':
       if (!started) {
@@ -77,9 +84,33 @@ self.onmessage = (e: MessageEvent) => {
     case 'pause':
       paused = !!m.paused;
       break;
+    case 'rulesDump':
+      // DEV: the frame log + replies, for tools/verify-round.mjs
+      self.postMessage({ type: 'rulesDump', ...world!.rulesLog });
+      break;
     default:
       // everything else is a sim command; queued for the next tick boundary
       queue.push(m as unknown as Command);
       break;
   }
+}
+
+async function bootRules(): Promise<void> {
+  const assets = await fetchVmAssets(import.meta.env.BASE_URL);
+  world = new World(CFG.SEED, new VmRules(assets));
+  ready = true;
+  for (const m of pending) handle(m as { type: string } & Record<string, unknown>);
+  pending.length = 0;
+}
+
+self.onmessage = (e: MessageEvent) => {
+  const m = e.data as { type: string } & Record<string, unknown>;
+  if (ready) handle(m);
+  else pending.push(m);
 };
+
+bootRules().catch((err: unknown) => {
+  // no rules, no game: say so loudly rather than run an unscored match
+  console.error('sim.worker: the rules VM failed to boot', err);
+  self.postMessage({ type: 'rulesError', message: (err as Error).message });
+});

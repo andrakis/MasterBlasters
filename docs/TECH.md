@@ -87,3 +87,20 @@ ray-casts its boom against the platforms and pulls in.
 movement, knockback formula properties, all four weapons, round/stock/mode logic,
 whole headless bot matches (Banner style: outcomes, not internals), and the replay
 fingerprint. Browser verification via playwright + `__mbCmd`/`__mbProbe`/`__mbCam`.
+
+
+## 8. The rules VM (CoreFrame)
+
+Scoring is not computed in TypeScript. `src/rules/mb_rules_core.c` is a resident process
+in the CoreFrame VM — the c4bb simulator of the c4m ISA, vendored under `vendor/coreframe/`
+and booted in `sim.worker.ts` beside the World from `public/coreframe/{microcode.uc, fw.c4r,
+mb_rules.c4r}`. The World sends frames (`src/rules/frames.json`: MATCH_START, ROUND_START,
+FALL, SPAWN, TIMER, TICK_END) through a shared-RAM mailbox and adopts the VERDICT replies:
+stream seeds, spawn slots, KO credit, stocks, round results, sudden death, match wins.
+Calls are synchronous and event-rate (a handful per round, ~1k guest cycles each).
+
+Why: a copied bundle cannot score a round without the image, and the same image replays
+on a server — `tools/verify-round.mjs` re-runs a client's frame log (`window.__mbRoundLog()`)
+on the node host and, with `--native`, under native c4m32 (`test/fixtures/mb_rules_native.c4r`,
+the same core through a file log). `test/rulesParity.test.ts` pins both hosts identical.
+Rebuild after editing the C: `tools/build-rules.sh` (needs ../CoreFrame and ~/git/c4).
