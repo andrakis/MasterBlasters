@@ -17,6 +17,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHost } from '../vendor/coreframe/host.js';
+import { splitSigned } from '../vendor/coreframe/sign.js';
 
 const file = process.argv[2];
 if (!file) { console.error('usage: verify-round.mjs round.json [--native]'); process.exit(2); }
@@ -26,8 +27,8 @@ if (!Array.isArray(round.frames) || !Array.isArray(round.replies)) { console.err
 const pub = fileURLToPath(new URL('../public/coreframe/', import.meta.url));
 const host = createHost({
   ucSource: readFileSync(join(pub, 'microcode.uc'), 'utf8'),
-  fwBytes: new Uint8Array(readFileSync(join(pub, 'fw.c4r'))),
-  progBytes: new Uint8Array(readFileSync(join(pub, 'mb_rules.c4r'))),
+  fwBytes: splitSigned(new Uint8Array(readFileSync(join(pub, 'fw.c4r')))).image,
+  progBytes: splitSigned(new Uint8Array(readFileSync(join(pub, 'mb_rules.c4r')))).image,
   argv: ['mb_rules.c4r'],
   // a release build's permuted encoding sits beside the images
   opnames: existsSync(join(pub, 'opnames.rom')) ? readFileSync(join(pub, 'opnames.rom'), 'utf8') : null,

@@ -8,7 +8,7 @@ import { makeBoxes, type Box } from '../src/sim/maps/types.ts';
 import type { PlayerCore } from '../src/sim/types.ts';
 import { World } from '../src/sim/world.ts';
 import { existsSync, readFileSync } from 'node:fs';
-import { VmRules, isOpnamesRom, type VmAssets } from '../src/rules/vmRules.ts';
+import { VmRules, bareImage, isOpnamesRom, type VmAssets } from '../src/rules/vmRules.ts';
 
 // The rules VM, booted from the same files the browser fetches (public/coreframe).
 // One machine per World: boot is a few hundred cycles, so it is cheap.
@@ -18,8 +18,8 @@ export function testRules(): VmRules {
     const base = new URL('../public/coreframe/', import.meta.url);
     vmAssets = {
       ucSource: readFileSync(new URL('microcode.uc', base), 'utf8'),
-      fwBytes: new Uint8Array(readFileSync(new URL('fw.c4r', base))),
-      progBytes: new Uint8Array(readFileSync(new URL('mb_rules.c4r', base))),
+      fwBytes: bareImage(new Uint8Array(readFileSync(new URL('fw.c4r', base)))),
+      progBytes: bareImage(new Uint8Array(readFileSync(new URL('mb_rules.c4r', base)))),
     };
     // a release build's permuted encoding, if the images were built with one
     const romFile = new URL('opnames.rom', base);
