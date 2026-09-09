@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/loader.js @ 6f61173 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/loader.js @ 15743f4 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/loader.js @ 14727dc -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/loader.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // loader.js - .c4r image loader for the c4bb machine.
 //
 // A direct port of c4l.c (the cleanest loader in the repo) for 32-bit

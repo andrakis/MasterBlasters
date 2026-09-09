@@ -7,8 +7,8 @@ import type { MapDef } from '../src/sim/maps/types.ts';
 import { makeBoxes, type Box } from '../src/sim/maps/types.ts';
 import type { PlayerCore } from '../src/sim/types.ts';
 import { World } from '../src/sim/world.ts';
-import { readFileSync } from 'node:fs';
-import { VmRules, type VmAssets } from '../src/rules/vmRules.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { VmRules, isOpnamesRom, type VmAssets } from '../src/rules/vmRules.ts';
 
 // The rules VM, booted from the same files the browser fetches (public/coreframe).
 // One machine per World: boot is a few hundred cycles, so it is cheap.
@@ -21,6 +21,9 @@ export function testRules(): VmRules {
       fwBytes: new Uint8Array(readFileSync(new URL('fw.c4r', base))),
       progBytes: new Uint8Array(readFileSync(new URL('mb_rules.c4r', base))),
     };
+    // a release build's permuted encoding, if the images were built with one
+    const romFile = new URL('opnames.rom', base);
+    if (existsSync(romFile)) { const rom = readFileSync(romFile, 'utf8'); if (isOpnamesRom(rom)) vmAssets.opnames = rom; }
   }
   return new VmRules(vmAssets);
 }

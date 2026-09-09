@@ -29,6 +29,8 @@ const host = createHost({
   fwBytes: new Uint8Array(readFileSync(join(pub, 'fw.c4r'))),
   progBytes: new Uint8Array(readFileSync(join(pub, 'mb_rules.c4r'))),
   argv: ['mb_rules.c4r'],
+  // a release build's permuted encoding sits beside the images
+  opnames: existsSync(join(pub, 'opnames.rom')) ? readFileSync(join(pub, 'opnames.rom'), 'utf8') : null,
 });
 const fmt = (f) => `${f.type}:${Array.from(f.payload).map((v) => ` ${v}`).join('')}`;
 const replayed = [];

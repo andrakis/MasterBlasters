@@ -10,6 +10,8 @@ export interface HostOptions {
   mboxBytes?: number;
   onByte?: ((b: number) => void) | null;
   slice?: number;
+  /** a permuted opcode-name ROM (release builds); omit for the stock encoding */
+  opnames?: string | null;
 }
 export interface Host {
   output(): string;

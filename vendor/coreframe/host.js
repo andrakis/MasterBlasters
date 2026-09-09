@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/host.js @ 6f61173 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/host.js @ 14727dc -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // host.js - the in-thread host: one persistent machine, the mailbox, and
 // "run until the guest says idle". Plain ESM; works in a page, a worker,
 // and node alike (node/host.js adds file loading, worker.js the thread).
@@ -20,7 +20,7 @@
 
 import { Arena, CONS_RET } from './sim/arena.js';
 import { Devices } from './sim/devices.js';
-import { Machine, R } from './sim/machine.js';
+import { Machine, R, setOpcodeNames } from './sim/machine.js';
 import { Turbo } from './sim/turbo.js';
 import { assemble } from './sim/ucode.js';
 import { boot, runToExit } from './sim/loader.js';
@@ -30,7 +30,11 @@ export const BELL_REPLY = 1, BELL_IDLE = 2;
 
 let ucodeCache = new Map();
 
-export function createHost({ ucSource, fwBytes, progBytes, argv = ['module.c4r'], arenaBytes = 4 << 20, mboxBytes = 64 << 10, onByte = null, slice = 256 }) {
+// opnames: a permuted opcode-name ROM (tools/permute-release.sh) -- the
+// machine's encoding, shared by every host in this JS realm; the firmware
+// and the module must have been permuted with the same seed. Omit for stock.
+export function createHost({ ucSource, fwBytes, progBytes, argv = ['module.c4r'], arenaBytes = 4 << 20, mboxBytes = 64 << 10, onByte = null, slice = 256, opnames = null }) {
+  if (opnames) setOpcodeNames(opnames);
   let uc = ucodeCache.get(ucSource);
   if (!uc) { uc = assemble(ucSource); ucodeCache.set(ucSource, uc); }
   let out = '';

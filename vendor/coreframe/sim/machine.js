@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/machine.js @ 6f61173 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/machine.js @ 15743f4 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/machine.js @ 14727dc -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/machine.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // machine.js - the c4bb CPU: registers, microstep engine, dispatch.
 //
 // Executes the tables assembled from hw/microcode.uc one microstep at
@@ -13,14 +13,28 @@
 // exactly (including missed-trap silence, the oisc4 convention).
 
 import { FETCH, DISPATCH, ALU_OPS } from './ucode.js';
-import { OPNAMES } from './devices.js';
+import { OPNAMES, setOpnames } from './devices.js';
 
 export const R = { PC: 0, SP: 1, BP: 2, A: 3, IR: 4, OPR: 5, MAR: 6, MDR: 7, B: 8, T: 9, U: 10 };
 export const REG_NAMES = ['PC', 'SP', 'BP', 'A', 'IR', 'OPR', 'MAR', 'MDR', 'B', 'T', 'U'];
 
-// Opcode numbers (c4m.c:261)
+// Opcode numbers (c4m.c:261). Rebuilt in place by rebuildOpcodeTables()
+// when the ROM is swapped, so every importer's `OP` stays the same object.
 export const OP = {};
-OPNAMES.match(/.{5}/g).forEach((n, i) => { OP[n.slice(0, 4).trim()] = i; });
+const OPERAND_NAMES = ['LEA', 'IMM', 'JMP', 'JSR', 'BZ', 'BNZ', 'ENT', 'ADJ', 'JSRI', 'JSRS',
+                       'LDL', 'LDG', 'PSHL', 'PSHG', 'LEAP', 'IMMP', 'STL'];   // LIP, ADDL and POPA take none
+const PM_GATED_NAMES = ['OPEN', 'READ', 'CLOS', 'PRTF', 'MALC', 'FREE', 'EXIT', 'PUTC', 'PUTS', 'RALC', 'INFO'];
+const OPERAND_OPS = new Set();
+export function rebuildOpcodeTables () {
+  for (const k of Object.keys(OP)) delete OP[k];
+  OPNAMES.match(/.{5}/g).forEach((n, i) => { OP[n.slice(0, 4).trim()] = i; });
+  OPERAND_OPS.clear();
+  for (const n of OPERAND_NAMES) OPERAND_OPS.add(OP[n]);
+  PM_GATED.clear();
+  for (const n of PM_GATED_NAMES) PM_GATED.add(OP[n]);
+}
+/** Install a (permuted) opcode-name ROM. Do this before constructing a Machine or a Turbo. */
+export function setOpcodeNames (names) { setOpnames(names); rebuildOpcodeTables(); }
 // 89, not 66: the opcode ROM now names c4mp's 66-78 and the fused
 // 79-88 as well. Naming is not implementing -- an opcode with no
 // microcode has dispatchTab[-1] and misses its trap exactly as an
@@ -30,11 +44,10 @@ export const INS_SIZE = 89;
 
 // The single place that decides which opcodes carry an operand word,
 // mirroring c4m_has_operand (c4m.c:344) exactly -- including JSRI and
-// JSRS, which this board's OPCD guard used to miss.
+// JSRS, which this board's OPCD guard used to miss. A SET, not ranges:
+// under a permuted ROM the operand-carrying opcodes are not contiguous.
 export function hasOperand (ir) {
-  return ir <= OP.ADJ || ir === OP.JSRI || ir === OP.JSRS
-      || (ir >= OP.LDL && ir <= OP.IMMP)   // LIP, ADDL and POPA take none
-      || ir === OP.STL;
+  return OPERAND_OPS.has(ir);
 }
 
 const TRAP_NAMES = ['TRAP_ILLOP', 'TRAP_HARD_IRQ', 'TRAP_SOFT_IRQ', 'TRAP_SIGNAL',
@@ -50,7 +63,8 @@ const TRAP_NAMES = ['TRAP_ILLOP', 'TRAP_HARD_IRQ', 'TRAP_SOFT_IRQ', 'TRAP_SIGNAL
 // allocations (docs/task-memory.md): a realloc that traps on one host
 // and does not on the other is an allocation the kernel knows about on
 // one host and not the other.
-export const PM_GATED = new Set([30, 31, 32, 33, 34, 35, 38, 39, 40, 41, 57]);
+export const PM_GATED = new Set();
+rebuildOpcodeTables();
 
 export class Machine {
   constructor(arena, ucode, devices, opts = {}) {

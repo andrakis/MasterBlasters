@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/turbo.js @ 6f61173 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/turbo.js @ 15743f4 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/turbo.js @ 14727dc -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/turbo.js @ f08d229 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // turbo.js - the fast engine: microcode compiled to JavaScript.
 //
 // The step engine (machine.js) interprets one microstep at a time so
@@ -17,7 +17,7 @@
 // guard, jsops go through machine.execJsop.
 
 import { FETCH, DISPATCH, ALU_OPS } from './ucode.js';
-import { R, OP, INS_SIZE, PM_GATED, Machine } from './machine.js';
+import { R, OP, INS_SIZE, PM_GATED, Machine, hasOperand } from './machine.js';
 import { OPNAMES } from './devices.js';
 
 const REG_LOCAL = ['pc', 'sp', 'bp', 'a', 'ir', 'opr', 'mar', 'mdr', 'b', 't', 'u'];
@@ -164,7 +164,7 @@ export class Turbo {
       let fromOpcd = false;
       for (;;) {
         let ir = r[R.IR] | 0;
-        if (fromOpcd && ir <= OP.ADJ) {        // OPCD guard (c4m.c:1535)
+        if (fromOpcd && hasOperand(ir)) {      // OPCD guard (c4m.c:1535)
           const name = i => OPNAMES.slice(i * 5, i * 5 + 4);
           m.printVm(`${name(this.opcdNum)} does not support opcodes requiring arguments (${name(ir)} given)\n`);
           const t = m.jamTrap(5, ir, m.trapHandler, { zeroInterval: true, unprot: true });
