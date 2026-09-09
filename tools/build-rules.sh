@@ -20,7 +20,6 @@ P=$here/public/coreframe
 node "$CF/runtime/frames/gen.mjs" "$R/frames.json" "$R/frames.h" "$R/frames.ts"
 mkdir -p "$P" "$here/test/fixtures"
 cp "$here/vendor/coreframe/hw/microcode.uc" "$P/microcode.uc"
-"$CF/tools/build-module.sh" "$here/test/fixtures/mb_rules_native.c4r" "$M/cf_native.c" "$R/frames.h" "$R/mb_rules_core.c" "$M/cf_native_main.c"
 sign_image () {   # sign in place when RELEASE_KEY names the private key
   [ -n "$RELEASE_KEY" ] || return 0
   node "$here/vendor/coreframe/node/sign.js" sign "$RELEASE_KEY" "$1" "$1.signed" > /dev/null && mv "$1.signed" "$1"
@@ -39,5 +38,8 @@ else
   echo "build-rules: public/coreframe stock encoding"
   sign_image "$P/fw.c4r"; sign_image "$P/mb_rules.c4r"
 fi
+# the native twin last: the shipped module above is compiled first, so a compiler
+# error maps to the source order the editor's build target lists
+"$CF/tools/build-module.sh" "$here/test/fixtures/mb_rules_native.c4r" "$M/cf_native.c" "$R/frames.h" "$R/mb_rules_core.c" "$M/cf_native_main.c"
 [ -n "$RELEASE_KEY" ] && echo "build-rules: images signed with $RELEASE_KEY"
 exit 0
