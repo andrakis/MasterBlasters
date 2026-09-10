@@ -63,8 +63,19 @@ export type NetRole = 'local' | 'host' | 'client';
 
 let worker: Worker | null = null;
 
-/** DEV builds and `?debug`: the rules run under C4KE and the tilde console is live */
-export const DEBUG = import.meta.env.DEV || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug'));
+/**
+ * Debug or release, and how to pick:
+ *   dev server (npm run dev)     debug -- the rules run under C4KE, tilde opens the console
+ *   npm run build && preview     release -- the rules run BARE on the firmware, attested, no console
+ *   ?debug=0  (or off/false/no)  release behaviour on the dev server
+ *   ?debug    (or =1)            debug behaviour on a built bundle, if its kernel files are still there
+ * The release path is the one a player gets: one task on bare metal, nothing to schedule.
+ */
+export const DEBUG = (() => {
+  const flag = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('debug') : null;
+  if (flag !== null) return !/^(0|off|false|no)$/i.test(flag);
+  return import.meta.env.DEV;
+})();
 
 // what the kernel prints arrives every sim tick; the store (and the console's ANSI renderer) sees it 20 times a second
 let consolePending = '';

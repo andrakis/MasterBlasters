@@ -106,6 +106,13 @@ the same core through a file log). `test/rulesParity.test.ts` pins both hosts id
 Rebuild after editing the C: `tools/build-rules.sh` (needs ../CoreFrame and ~/git/c4).
 
 ## 9. The C4KE console (DEV builds and `?debug`)
+
+**Which build am I in?** The dev server is debug and a built bundle is release; `?debug=0`
+gives you the release path on the dev server (bare VM, attested, no console — what a player
+runs), and `?debug` forces the debug path on a build whose `coreframe/kernel/` is still
+there. The status is visible without asking: in debug the tilde console exists at all, and
+`ps` shows the rules as a kernel task.
+
 In a dev build the rules VM boots **under C4KE** instead of bare: the vendored kernel host
 loads `public/coreframe/kernel/c4ke32.c4r` and its binaries-only disk (`init`, `c4sh`,
 `c4ke.vfs`, `vfsload`, `top`, `ps`, and `mb_rules_k.c4r` — the same rules unit linked with

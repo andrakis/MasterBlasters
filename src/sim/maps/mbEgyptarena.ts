@@ -739,7 +739,7 @@ export const mbegyptarena: MapDef = {
     { x: -13.93, y: 33.53, z: 14.79 },
     { x: 15.33, y: 33.93, z: -14.47 },
   ],
-  killY: -0.61,
+  killY: -12.573,
   theme: {
     platform: 0x797673,
     accent: 0xe3e6ff,
