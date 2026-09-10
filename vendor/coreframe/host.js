@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/host.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/host.js @ 45eef6a -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // host.js - the in-thread host: one persistent machine, the mailbox, and
 // "run until the guest says idle". Plain ESM; works in a page, a worker,
 // and node alike (node/host.js adds file loading, worker.js the thread).
@@ -134,8 +134,10 @@ export function makeExchange(ctx) {
     send(type, payload = []) {
       if (!mb.send(type, payload)) throw new Error(`coreframe: guest inbox full (type ${type})`);
       // a kernel with a cycle handler takes this as HIRQ_MBOX and schedules; a
-      // bare module has no handler and polls -- the count is harmless there
-      dev.raiseMbox();
+      // bare module has no handler and polls -- the count is harmless there.
+      // ctx.irq === false leaves the line alone: the kernel's scheduler scan
+      // wakes the bound task on its own (kernel.js, wake: 'poll')
+      if (ctx.irq !== false) dev.raiseMbox();
     },
     run(maxCycles = 5e6) {
       const cycles = step(maxCycles);

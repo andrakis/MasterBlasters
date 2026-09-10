@@ -1,5 +1,5 @@
-// vendored from CoreFrame/runtime/sim/arena.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
-// ported from c4/src/c4bb/sim/arena.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
+// vendored from CoreFrame/runtime/sim/arena.js @ 45eef6a -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// ported from c4/src/c4bb/sim/arena.js @ e1d8d50 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // arena.js - the flat byte-addressed memory of the c4bb machine.
 //
 // One Int32Array-backed arena replaces c4m's four malloc pools and raw

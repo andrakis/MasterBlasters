@@ -1,5 +1,5 @@
 // c4ke_mbox.h -- the mailbox from a C4KE task (extensions/c4ke_mbox.c).
-// Include after u0.h (its __c4_opcode and OP_REQUEST_SYMBOL). Opcodes are resolved
+// Pass as a source after u0.h (c4cc has no #include). Opcodes are resolved
 // by name at start, u0's way, so their numbers are the kernel's to choose.
 
 static int OP_MBOX_INFO, OP_MBOX_SEND, OP_MBOX_RECV, OP_MBOX_AWAIT, OP_MSG_SEND, OP_MSG_RECV;

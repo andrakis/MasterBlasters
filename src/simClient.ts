@@ -62,6 +62,12 @@ export interface Frame {
 export type NetRole = 'local' | 'host' | 'client';
 
 let worker: Worker | null = null;
+
+/** DEV builds and `?debug`: the rules run under C4KE and the tilde console is live */
+export const DEBUG = import.meta.env.DEV || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug'));
+
+/** type a line at the kernel's shell (the console UI) */
+export function sendConsole(text: string): void { worker?.postMessage({ type: 'consoleInput', text }); }
 let latest: Frame | null = null;
 let prev: Frame | null = null;
 let latestAt = 0;
@@ -207,6 +213,7 @@ export function startSim(): void {
     const raw = e.data as unknown as { type: string };
     if (raw.type === 'rulesDump') { rulesDumpResolve?.(raw as unknown as { frames: unknown[]; replies: unknown[] }); rulesDumpResolve = null; return; }
     if (raw.type === 'rulesError') { console.error('rules VM:', (raw as unknown as { message: string }).message); return; }
+    if (raw.type === 'console') { useStore.getState().appendConsole((raw as unknown as { text: string }).text); return; }
     const m = e.data;
     if (m.type !== 'frame') return;
     if (netRole === 'client') return; // clients live on snapshots, not the local worker
@@ -225,7 +232,7 @@ export function startSim(): void {
       }
     }
   };
-  worker.postMessage({ type: 'init' });
+  worker.postMessage({ type: 'init', debug: DEBUG });
 }
 
 // --- reads for the renderer ----------------------------------------------------------

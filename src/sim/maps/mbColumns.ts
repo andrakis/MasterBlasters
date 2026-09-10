@@ -192,8 +192,6 @@ export const mbcolumns: MapDef = {
     { x: 1.96, y: 48.16, z: 1.19 },
   ],
   killY: -12.04,
-  // Palette derived from the map's own data: 120 x light "86 225 233"
-  // and the mean texdata reflectivity of its 10 materials.
   theme: {
     platform: 0x716f71,
     accent: 0x5ef6ff,

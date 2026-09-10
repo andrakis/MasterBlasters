@@ -60,6 +60,30 @@ const falls = log.frames.filter((f) => f.type === 3).length;
 const verdicts = log.replies.filter((r) => r.type === 18).length;
 writeFileSync(out, JSON.stringify(log));
 console.log(`round log: ${log.frames.length} frames (${falls} falls), ${log.replies.length} replies (${verdicts} verdicts) -> test/fixtures/last-round.json`);
+
+// ---- the C4KE console (DEV builds run the rules under the kernel): tilde opens it over the game,
+// top has been refreshing every 5 s since boot, a typed `ps` is answered by c4sh, tilde closes it
+const consoleChecks = [];
+const check = (ok, what) => { consoleChecks.push(ok); console.log(`  ${ok ? 'ok ' : 'FAIL'} ${what}`); };
+await page.keyboard.press('Backquote');
+await page.waitForTimeout(400);
+check(await page.evaluate(() => !!document.querySelector('.console.open')), 'tilde opened the console');
+const consoleText = () => page.evaluate(() => document.querySelector('.console pre')?.textContent ?? '');
+check(/PID PPID/.test(await consoleText()) && /top -d 5000/.test(await consoleText()), 'top has been drawing (its header and its own row are on screen)');
+check(/mb_rules_k\.c4r/.test(await consoleText()), 'the rules module is a task in top');
+if (!(await page.evaluate(() => document.activeElement?.tagName === 'INPUT'))) await page.click('.console input');
+await page.keyboard.type('ps');
+await page.keyboard.press('Enter');
+// the echo lands wherever the text was (after top's last screen, usually), and ps's answer is a task
+// listing that ends in a prompt -- top's screens end in a rule of dashes
+const psAnswered = (t) => { const at = t.lastIndexOf('ps\n'); return at >= 0 && /Tasks:[\s\S]*?mb_rules_k\.c4r[\s\S]*?total memory[^\n]*\nc4sh>/.test(t.slice(at)); };
+await page.waitForFunction(() => { const t = document.querySelector('.console pre')?.textContent ?? ''; const at = t.lastIndexOf('ps\n'); return at >= 0 && /Tasks:[\s\S]*?mb_rules_k\.c4r[\s\S]*?total memory[^\n]*\nc4sh>/.test(t.slice(at)); }, null, { timeout: 8000 }).catch(() => {});
+check(psAnswered(await consoleText()), 'a typed ps was answered by the shell (the echo, then a task list ending in a prompt)');
+check(!(await page.evaluate(() => !!document.pointerLockElement)), 'the pointer is free while the console is open');
+await page.keyboard.press('Backquote');
+await page.waitForTimeout(300);
+check(!(await page.evaluate(() => !!document.querySelector('.console.open'))), 'tilde closed it again');
+if (!consoleChecks.every(Boolean)) { errors.push('console leg failed'); console.log('console text (tail):\n' + (await consoleText()).slice(-700)); }
 await cleanup();
 
 let verify = '';

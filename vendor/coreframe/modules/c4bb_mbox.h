@@ -11,7 +11,8 @@
 // BOARD ONLY, and only after the caller has seen C4I_MBOX (0x2000) in
 // __c4_info(): on native c4m these addresses are ordinary memory, and
 // a program that includes this must say "not fitted" and stop there
-// when the bit is absent. CoreFrame's cf_mbox.c mirrors it as a unit.
+// when the bit is absent. c4cc has no #include; pass this file as a
+// source ahead of the program, the way u0lite.h is passed.
 
 enum {
 	MB_BASE = 0x1b4,       // r: region base (0 = none)

@@ -67,6 +67,8 @@ function loop(): void {
       self.postMessage(msg, transfers);
     }
   }
+  // DEV: the OS gets a slice of its own each tick (top, the shell); what it printed goes up
+  if (rules?.kernel) { rules.breathe(50000); flushConsole(); }
 
   const elapsed = performance.now() - now;
   setTimeout(loop, Math.max(0, TICK_MS - elapsed));
@@ -95,22 +97,37 @@ function handle(m: { type: string } & Record<string, unknown>): void {
   }
 }
 
-async function bootRules(): Promise<void> {
-  const assets = await fetchVmAssets(import.meta.env.BASE_URL);
-  world = new World(CFG.SEED, new VmRules(assets));
+let rules: VmRules | null = null;
+
+async function bootRules(debug: boolean): Promise<void> {
+  // DEV: the rules under C4KE, with top at the shell -- the tilde console watches the OS
+  const assets = await fetchVmAssets(import.meta.env.BASE_URL, { kernel: debug });
+  rules = new VmRules(assets);
+  world = new World(CFG.SEED, rules);
+  if (rules.kernel) { rules.console('top -d 5000 &\n'); rules.breathe(2e6); }
   ready = true;
   for (const m of pending) handle(m as { type: string } & Record<string, unknown>);
   pending.length = 0;
 }
 
+/** DEV: what the kernel printed since last time, up to the page */
+function flushConsole(): void {
+  const text = rules?.takeConsole();
+  if (text) self.postMessage({ type: 'console', text });
+}
+
+let booting = false;
 self.onmessage = (e: MessageEvent) => {
   const m = e.data as { type: string } & Record<string, unknown>;
+  if (m.type === 'init' && !booting) {
+    booting = true;
+    bootRules(!!m.debug).catch((err: unknown) => {
+      // no rules, no game: say so loudly rather than run an unscored match
+      console.error('sim.worker: the rules VM failed to boot', err);
+      self.postMessage({ type: 'rulesError', message: (err as Error).message });
+    });
+  }
+  if (m.type === 'consoleInput') { rules?.console(String(m.text)); return; }
   if (ready) handle(m);
   else pending.push(m);
 };
-
-bootRules().catch((err: unknown) => {
-  // no rules, no game: say so loudly rather than run an unscored match
-  console.error('sim.worker: the rules VM failed to boot', err);
-  self.postMessage({ type: 'rulesError', message: (err as Error).message });
-});

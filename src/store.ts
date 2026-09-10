@@ -69,7 +69,15 @@ interface UiState extends SimState {
   setRoundEvent: (phase: RoundInfo['phase'], winnerTeam: number, winnerName: string) => void;
   setHurt: (amount: number) => void;
   setHitConfirm: () => void;
+
+  /** DEV: the C4KE console over the game (tilde); text is what the kernel printed, last 32K chars */
+  consoleOpen: boolean;
+  consoleText: string;
+  setConsoleOpen: (v: boolean) => void;
+  appendConsole: (text: string) => void;
 }
+
+const CONSOLE_KEEP = 32768;
 
 let nextFeedId = 1;
 const FEED_TTL_MS = 5000;
@@ -80,6 +88,10 @@ const urlMap = new URLSearchParams(typeof location !== 'undefined' ? location.se
 const initialMapId = urlMap && urlMap in MAPS ? urlMap : 'mb_test';
 
 export const useStore = create<UiState>((set) => ({
+  consoleOpen: false,
+  consoleText: '',
+  setConsoleOpen: (v) => set({ consoleOpen: v }),
+  appendConsole: (text) => set((s) => { const t = s.consoleText + text; return { consoleText: t.length > CONSOLE_KEEP ? t.slice(t.length - CONSOLE_KEEP) : t }; }),
   tick: 0,
   simTps: 0,
   hud: null,

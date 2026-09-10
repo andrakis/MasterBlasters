@@ -104,3 +104,24 @@ on a server — `tools/verify-round.mjs` re-runs a client's frame log (`window._
 on the node host and, with `--native`, under native c4m32 (`test/fixtures/mb_rules_native.c4r`,
 the same core through a file log). `test/rulesParity.test.ts` pins both hosts identical.
 Rebuild after editing the C: `tools/build-rules.sh` (needs ../CoreFrame and ~/git/c4).
+
+## 9. The C4KE console (DEV builds and `?debug`)
+In a dev build the rules VM boots **under C4KE** instead of bare: the vendored kernel host
+loads `public/coreframe/kernel/c4ke32.c4r` and its binaries-only disk (`init`, `c4sh`,
+`c4ke.vfs`, `vfsload`, `top`, `ps`, and `mb_rules_k.c4r` — the same rules unit linked with
+`cf_kmain.c`, the kernel's mailbox opcodes — all permuted and signed like the rest), starts
+`mb_rules_k.c4r &` as a background job and `top -d 5000 &` at the shell. The sim worker
+gives the OS a slice each tick (`rules.breathe(50000)`, cheap when it is idle) and relays
+what the kernel prints; **tilde** drops a Quake-style console over the game
+(`src/ui/Console.tsx`) where you watch top refresh every 5 s of real time and type at
+c4sh (`ps`, `top -d 1000 &`, `kill`, …). While it is open the game's keys and pointer lock
+stand aside; tilde or Escape closes it. Release builds stay bare and attested; the replay
+verifier (`verify-round`) is bare too, and the gate proves a round played under the kernel
+verifies against it — the verdicts are the same unit's (`test/kernelParity.test.ts` pins
+bare == kernel reply for reply). Not cycle-deterministic (the kernel's clock follows real
+time here), which the release path does not need. The kernel host wakes the module by the
+scheduler's scan, not an interrupt: an interrupt landing while `top` is woken wedges C4KE
+(CoreFrame docs/messaging.md).
+Gate: `tools/vm-gate.mjs` opens the console with a real tilde, sees top's rows and the rules
+task, types `ps`, closes it.
+

@@ -17,10 +17,18 @@ export interface KernelHostOptions {
   prompt?: string;
   ready?: string | null;
   bootBudget?: number;
+  /** 'cycles' (default): the PIT follows the cycle counter, runs are reproducible; 'wall': real time (an OS beside a game) */
+  clock?: 'cycles' | 'wall';
+  /** 'poll' (default): the scheduler's scan picks frames up; 'irq': HIRQ_MBOX on every send (wedges C4KE beside live tasks, opt-in) */
+  wake?: 'irq' | 'poll';
 }
 export interface KernelHost extends Host {
   /** type at the kernel's shell (start another task, say) */
   console(text: string): void;
   runUntil(pred: () => boolean, maxCycles?: number): boolean;
+  /** run the OS for its own sake: until idle with no typed input pending, at most maxCycles; returns cycles spent */
+  breathe(maxCycles?: number): number;
+  /** bytes typed but not yet read by the shell */
+  inputPending(): number;
 }
 export function createKernelHost(opts: KernelHostOptions): KernelHost;
