@@ -9,6 +9,14 @@ enum { OP_REQUEST_SYMBOL = 128 };
 #include "c4ke_mbox.h"
 #include "cf.h"
 
+// The doorbell, written straight to the device (protected mode gates opcodes, not
+// addresses, so a user task may ring it). The bare loop rings MB_BELL_IDLE to say
+// "nothing of yours is left"; under a kernel that value is the KERNEL's to ring when
+// no task at all is runnable, so a module says the same thing with its own value:
+// MB_BELL_DONE means "I have drained your inbox and answered", and the host may stop
+// the machine even though `top` or `mandel` is still runnable.
+enum { MB_BELL = 0x1bc, MB_BELL_DONE = 3 };
+
 void cf_emit (int type, int *payload, int n) {
 	if (!mbox_send(type, payload, n)) printf("cf: outbox full (type %d)\n", type);
 }
@@ -19,6 +27,7 @@ int main (int argc, char **argv) {
 	cf_init();
 	printf("cf: bound\n");
 	while (1) {
+		*(int *)MB_BELL = MB_BELL_DONE;      // done with everything the host queued
 		mbox_await(0);
 		n = mbox_recv(buf, 80);
 		if (n < 3) continue;

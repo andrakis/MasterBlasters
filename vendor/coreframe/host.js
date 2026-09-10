@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/host.js @ 5092f46 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/host.js @ cdb0483 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // host.js - the in-thread host: one persistent machine, the mailbox, and
 // "run until the guest says idle". Plain ESM; works in a page, a worker,
 // and node alike (node/host.js adds file loading, worker.js the thread).
@@ -27,7 +27,7 @@ import { boot, runToExit } from './sim/loader.js';
 import { HostMailbox } from './sim/mbox.js';
 import { sha256, hex } from './sha256.js';
 
-export const BELL_REPLY = 1, BELL_IDLE = 2;
+export const BELL_REPLY = 1, BELL_IDLE = 2, BELL_DONE = 3;
 
 let ucodeCache = new Map();
 
@@ -103,14 +103,24 @@ export function bootModule(machine, fwBytes, progBytes, argv, { mbox, attest = t
 
 /**
  * The exchange loop shared by the bare host and the kernel host: run in slices
- * until the guest's (verified) idle bell, drain the replies.
- * ctx: { arena, machine, dev, turbo, mb, progImg | null, slice, gate: { idle(), reset() }, output(), onShutdown? }
+ * until the guest has settled, drain the replies.
+ *
+ * "Settled" is the host's business, because it means different things on the two:
+ * for a bare module the machine going idle IS the module being done, but under a
+ * kernel the machine is busy whenever any task is (a `mandel` at the console, say),
+ * so the kernel host passes its own `settled` -- the module's own DONE bell.
+ * A wrong answer here is not a slow exchange, it is a thrown one: the reply may
+ * already be in the outbox while the host waits for an idle that will not come.
+ *
+ * ctx: { arena, machine, dev, turbo, mb, progImg | null, slice, gate: { idle(), reset() }, output(),
+ *        settled?, exchangeBudget?, onStall?, onShutdown?, irq? }
  */
 export function makeExchange(ctx) {
   const { arena, machine, dev, turbo, mb, progImg, slice, gate } = ctx;
+  const settled = ctx.settled ?? (() => gate.idle());
   let exited = null;
 
-  function step(maxCycles) {
+  function step(maxCycles, stop = settled) {
     const start = machine.cycle;
     gate.reset();
     while (machine.cycle - start < maxCycles && !dev.halted && exited === null) {
@@ -119,7 +129,7 @@ export function makeExchange(ctx) {
       // (it shut down) -- either way the machine is done, and turbo would
       // otherwise return at once without spending a cycle, forever
       if (machine.regs[R.PC] === CONS_RET) { exited = progImg ? runToExit(machine, progImg, 1e6, turbo) : machine.regs[R.A]; break; }
-      if (gate.idle()) break;
+      if (stop()) break;
     }
     if (dev.halted && exited === null) exited = dev.status;
     return machine.cycle - start;
@@ -139,9 +149,9 @@ export function makeExchange(ctx) {
       // wakes the bound task on its own (kernel.js, wake: 'poll')
       if (ctx.irq !== false) dev.raiseMbox();
     },
-    run(maxCycles = 5e6) {
-      const cycles = step(maxCycles);
-      return { frames: mb.drain(), cycles, idle: gate.idle(), exited };
+    run(maxCycles = 5e6, stop = settled) {
+      const cycles = step(maxCycles, stop);
+      return { frames: mb.drain(), cycles, idle: gate.idle(), settled: settled(), exited };
     },
     /** run until a predicate holds (booting a kernel to its prompt, say) */
     runUntil(pred, maxCycles = 60e6) {
@@ -154,18 +164,29 @@ export function makeExchange(ctx) {
       if (dev.halted && exited === null) exited = dev.status;
       return pred();
     },
-    exchange(type, payload = [], maxCycles = 5e6) {
+    /**
+     * Send a frame and run until the module has settled; the replies come back.
+     * A budget that runs out is a STALL: ctx.onStall (the kernel host's, which
+     * warns and waits again while the OS is busy) decides whether to keep going.
+     * With no onStall a stall throws -- a bare module that will not answer is broken.
+     */
+    exchange(type, payload = [], maxCycles = ctx.exchangeBudget ?? 5e6) {
       api.send(type, payload);
-      const r = api.run(maxCycles);
-      if (!r.idle && r.exited === null) throw new Error(`coreframe: guest did not go idle within ${maxCycles} cycles (type ${type})`);
-      return r.frames;
+      const frames = [];
+      for (let attempt = 1; ; attempt++) {
+        const r = api.run(maxCycles);
+        frames.push(...r.frames);
+        if (r.settled || r.exited !== null) return frames;
+        if (!ctx.onStall) throw new Error(`coreframe: guest did not settle within ${maxCycles} cycles (type ${type})`);
+        if (!ctx.onStall({ type, attempt, cycles: maxCycles * attempt, frames: frames.length })) return frames;
+      }
     },
     /** frame type 0 asks the resident loop to return from main */
     shutdown(maxCycles = 5e6) {
       if (exited !== null) return exited;
       mb.send(0, []);
-      dev.raiseMbox();
-      step(maxCycles);
+      if (ctx.irq !== false) dev.raiseMbox();
+      step(maxCycles, ctx.shutdownSettled ?? (() => false));   // run it out: the module returns from main
       if (ctx.onShutdown) ctx.onShutdown(api);
       return exited;
     },

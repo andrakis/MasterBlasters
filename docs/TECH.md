@@ -111,7 +111,7 @@ loads `public/coreframe/kernel/c4ke32.c4r` and its binaries-only disk (`init`, `
 `c4ke.vfs`, `vfsload`, `top`, `ps`, and `mb_rules_k.c4r` — the same rules unit linked with
 `cf_kmain.c`, the kernel's mailbox opcodes — all permuted and signed like the rest), starts
 `mb_rules_k.c4r &` as a background job and `top -d 5000 &` at the shell. The sim worker
-gives the OS a slice each tick (`rules.breathe(50000)`, cheap when it is idle) and relays
+gives the OS a slice each tick (`rules.breathe(OS_CYCLES)`, cheap when it is idle) and relays
 what the kernel prints; **tilde** drops a Quake-style console over the game
 (`src/ui/Console.tsx`) where you watch top refresh every 5 s of real time and type at
 c4sh (`ps`, `top -d 1000 &`, `kill`, …). While it is open the game's keys and pointer lock
@@ -132,6 +132,14 @@ folds clear/home so a program that redraws its screen updates in place; **raw ke
 (the button, or Ctrl+R) sends every keystroke straight through, which raycast wants.
 `npm run build` prunes `userland/` from the release bundle and its entries from
 `files.json`; the kernel core stays so `?debug` works on a deploy.
+**A hog at the console does not stop the game.** `mandel` or `raycast` only slows the rules
+down (an exchange costs ~10k cycles beside a background hog, ~200k beside a foreground one,
+against a 20M budget), because an exchange waits for the MODULE to say it is done, not for the
+whole machine to fall idle. If one ever did outlast the budget the console says so and the
+exchange gives back what it has. What still stops the game is a missing verdict — the VM is the
+authority and a game that scored itself would be worse — and then the sim keeps breathing the
+OS so the console survives to show you why.
 Gate: `tools/vm-gate.mjs` opens the console with a real tilde, sees top's rows and the rules
-task, types `ps`, `ls /home/user` and `hello`, closes it.
+task, types `ps`, `ls /home/user` and `hello`, runs `mandel` while the match plays (the tick
+keeps advancing) and checks the shell still answers, then closes it.
 

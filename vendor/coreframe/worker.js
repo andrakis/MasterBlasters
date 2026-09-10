@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/worker.js @ 5092f46 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/worker.js @ cdb0483 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // worker.js - the machine on its own thread, its RAM a SharedArrayBuffer.
 //
 // The page (client.js) owns the other end of the mailbox rings directly in

@@ -76,11 +76,17 @@ export class VmRules extends FrameRules implements Rules {
     let kernel: KernelHost | null = null;
     if (assets.kernel) {
       const files = new Map(assets.kernel.files);
-      // the module (its C4KE build, on the disk) as a background job, so c4sh keeps its prompt; the clock follows real time so
-      // `top -d 5000` refreshes every 5 s of the player's time. Not attested (the kernel host does
-      // not do that yet) and not cycle-deterministic: the replay verifier uses the bare host
+      // the module (its C4KE build, on the disk) as a background job, so c4sh keeps its prompt.
+      // Not attested (the kernel host does not do that yet); the replay verifier uses the bare host
       const buf = { s: '' };
-      kernel = createKernelHost({ ucSource: assets.ucSource, fwBytes: assets.fwBytes, kernelBytes: assets.kernel.kernelBytes, files, program: 'mb_rules_k.c4r &', opnames: assets.opnames ?? null, clock: 'wall', wake: 'poll', onByte: (b) => { buf.s += String.fromCharCode(b); } });
+      kernel = createKernelHost({
+        ucSource: assets.ucSource, fwBytes: assets.fwBytes, kernelBytes: assets.kernel.kernelBytes, files,
+        program: 'mb_rules_k.c4r &', opnames: assets.opnames ?? null, wake: 'poll',
+        onByte: (b) => { buf.s += String.fromCharCode(b); },
+        // a hog at the console (mandel, raycast) only slows the module down; if one ever does
+        // outlast the budget, say so in the console rather than take the game down with it
+        onStall: (i) => { buf.s += `\ncf: the kernel is busy -- frame ${i.type} unanswered after ${i.cycles} cycles${i.keep ? ', waiting...' : ' -- giving up'}\n`; },
+      });
       host = kernel;
       super({ exchange: (type, payload) => host.exchange(type, payload) });
       this.consoleBufRef = buf;

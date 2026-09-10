@@ -31,44 +31,69 @@ let tps = 0;
 let tickWindow = 0;
 let windowStart = 0;
 
+// DEV: cycles handed to the OS per tick, and what that makes of its clock. The kernel's time
+// IS the cycle counter (CoreFrame runtime/kernel.js), so at 60 ticks a second these cycles buy
+// OS_CYCLES * 60 / 20000 = 150 ms of kernel time per real second: `top -d 750` refreshes about
+// every five seconds of the player's time. Raise one and the other follows.
+const OS_CYCLES = 50000;
+const TOP_REFRESH_MS = 750;
+
+/** the sim stops when the rules do -- the VM is the authority, and a game that kept
+ *  scoring itself would be worse than one that stops. Say why in the console, and keep
+ *  the OS breathing so the console is still there to say it in. */
+let simFailed = false;
+function fail(err: unknown): void {
+  if (simFailed) return;
+  simFailed = true;
+  const message = (err as Error)?.message ?? String(err);
+  console.error('sim.worker: the rules VM failed', err);
+  self.postMessage({ type: 'console', text: `\n*** the rules VM failed: ${message}\n*** the sim has stopped; the console is still live, reload to play again\n` });
+  self.postMessage({ type: 'rulesError', message });
+  const keepConsoleAlive = () => { if (rules?.kernel) { try { rules.breathe(OS_CYCLES); } catch { /* the machine is gone */ } flushConsole(); } setTimeout(keepConsoleAlive, 33); };
+  keepConsoleAlive();
+}
+
 function loop(): void {
-  const w = world!;
+  if (simFailed) return;
   const now = performance.now();
-  if (last === 0) last = now;
-  acc += now - last;
-  last = now;
+  try {
+    const w = world!;
+    if (last === 0) last = now;
+    acc += now - last;
+    last = now;
 
-  if (paused) {
-    acc = 0; // no catch-up burst on resume
-  } else {
-    let ran = 0;
-    while (acc >= TICK_MS && ran < CFG.MAX_CATCHUP) {
-      if (queue.length > 0) {
-        for (const cmd of queue) w.apply(cmd);
-        queue.length = 0;
+    if (paused) {
+      acc = 0; // no catch-up burst on resume
+    } else {
+      let ran = 0;
+      while (acc >= TICK_MS && ran < CFG.MAX_CATCHUP) {
+        if (queue.length > 0) {
+          for (const cmd of queue) w.apply(cmd);
+          queue.length = 0;
+        }
+        w.step();
+        acc -= TICK_MS;
+        ran++;
+        tickWindow++;
       }
-      w.step();
-      acc -= TICK_MS;
-      ran++;
-      tickWindow++;
-    }
-    // stalled beyond catch-up (tab hidden, debugger): drop the debt, don't spiral
-    if (acc >= TICK_MS) acc = acc % TICK_MS;
+      // stalled beyond catch-up (tab hidden, debugger): drop the debt, don't spiral
+      if (acc >= TICK_MS) acc = acc % TICK_MS;
 
-    if (now - windowStart >= 500) {
-      tps = Math.round((tickWindow * 1000) / (now - windowStart));
-      tickWindow = 0;
-      windowStart = now;
-    }
+      if (now - windowStart >= 500) {
+        tps = Math.round((tickWindow * 1000) / (now - windowStart));
+        tickWindow = 0;
+        windowStart = now;
+      }
 
-    if (ran > 0) {
-      const { msg, transfers } = w.pack();
-      msg.simTps = tps;
-      self.postMessage(msg, transfers);
+      if (ran > 0) {
+        const { msg, transfers } = w.pack();
+        msg.simTps = tps;
+        self.postMessage(msg, transfers);
+      }
     }
-  }
-  // DEV: the OS gets a slice of its own each tick (top, the shell); what it printed goes up
-  if (rules?.kernel) { rules.breathe(50000); flushConsole(); }
+    // DEV: the OS gets a slice of its own each tick (top, the shell); what it printed goes up
+    if (rules?.kernel) { rules.breathe(OS_CYCLES); flushConsole(); }
+  } catch (err) { fail(err); return; }
 
   const elapsed = performance.now() - now;
   setTimeout(loop, Math.max(0, TICK_MS - elapsed));
@@ -104,7 +129,7 @@ async function bootRules(debug: boolean): Promise<void> {
   const assets = await fetchVmAssets(import.meta.env.BASE_URL, { kernel: debug });
   rules = new VmRules(assets);
   world = new World(CFG.SEED, rules);
-  if (rules.kernel) { rules.console('top -d 5000 &\n'); rules.breathe(2e6); }
+  if (rules.kernel) { rules.console(`top -d ${TOP_REFRESH_MS} &\n`); rules.breathe(2e6); }
   ready = true;
   for (const m of pending) handle(m as { type: string } & Record<string, unknown>);
   pending.length = 0;

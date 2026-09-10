@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/sign.js @ 5092f46 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/sign.js @ cdb0483 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // sign.js - the signature trailer on a .c4r image, and its verification.
 //
 // Every loader stops reading at a computed offset (docs/PLAN.md M3), so a

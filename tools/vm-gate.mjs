@@ -69,7 +69,7 @@ await page.keyboard.press('Backquote');
 await page.waitForTimeout(400);
 check(await page.evaluate(() => !!document.querySelector('.console.open')), 'tilde opened the console');
 const consoleText = () => page.evaluate(() => document.querySelector('.console pre')?.textContent ?? '');
-check(/PID PPID/.test(await consoleText()) && /top -d 5000/.test(await consoleText()), 'top has been drawing (its header and its own row are on screen)');
+check(/PID PPID/.test(await consoleText()) && /top -d \d+/.test(await consoleText()), 'top has been drawing (its header and its own row are on screen)');
 check(/mb_rules_k\.c4r/.test(await consoleText()), 'the rules module is a task in top');
 if (!(await page.evaluate(() => document.activeElement?.tagName === 'INPUT'))) await page.click('.console input');
 await page.keyboard.type('ps');
@@ -86,6 +86,20 @@ check(/mandel[\s\S]*raycast[\s\S]*entries in \/home\/user/.test(await consoleTex
 await page.keyboard.type('hello'); await page.keyboard.press('Enter');
 await page.waitForFunction(() => /hello\n[\s\S]*yello/.test(document.querySelector('.console pre')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => {});
 check(/hello\n[\s\S]*yello/.test(await consoleText()), 'hello ran from the userland');
+// a CPU hog at the console must NOT take the sim down with it: `mandel` in the foreground used to
+// throw "guest did not go idle within 5000000 cycles" out of the exchange and stop the game
+const tickBefore = (await page.evaluate('window.__mbProbe()')).tick;
+await page.keyboard.type('mandel'); await page.keyboard.press('Enter');
+await page.waitForFunction(() => document.querySelectorAll('.console pre span').length > 500, null, { timeout: 20000 }).catch(() => {});
+const spans = await page.evaluate(() => document.querySelectorAll('.console pre span').length);
+check(spans > 500, `mandel drew in colour at the console (${spans} spans)`);
+const tickAfter = (await page.evaluate('window.__mbProbe()')).tick;
+check(tickAfter > tickBefore, `the sim kept ticking while mandel ran (tick ${tickBefore} -> ${tickAfter})`);
+// mandel holds the terminal until it finishes; wait for the prompt before typing again
+await page.waitForFunction(() => /c4sh>\s*$/.test(document.querySelector('.console pre')?.textContent ?? ''), null, { timeout: 30000 }).catch(() => {});
+await page.keyboard.type('ps'); await page.keyboard.press('Enter');
+await page.waitForFunction(() => { const t = document.querySelector('.console pre')?.textContent ?? ''; const at = t.lastIndexOf('ps\n'); return at >= 0 && /Tasks:/.test(t.slice(at)); }, null, { timeout: 15000 }).catch(() => {});
+check(psAnswered(await consoleText()), 'and the shell still answers afterwards');
 check(!(await page.evaluate(() => !!document.pointerLockElement)), 'the pointer is free while the console is open');
 await page.keyboard.press('Backquote');
 await page.waitForTimeout(300);
