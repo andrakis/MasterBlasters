@@ -6,10 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BTN } from '../src/protocol.ts';
 import { World } from '../src/sim/world.ts';
-import { DEFAULT_SETTINGS, testRules } from './helpers.ts';
+import { DEFAULT_SETTINGS } from './helpers.ts';
 
 function runScripted(seed: number, ticks: number): World {
-  const w = new World(seed, testRules());
+  const w = new World(seed);
   w.apply({ type: 'config', ...DEFAULT_SETTINGS, seed, botCount: 3, botTier: 1 });
   for (let t = 0; t < ticks; t++) {
     // deterministic input script: strafe pattern + periodic rockets + jet bursts

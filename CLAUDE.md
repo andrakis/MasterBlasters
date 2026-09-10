@@ -45,20 +45,18 @@ lockstep. `simClient.ts` runs one of three roles: `local` (worker only), `host`
    host-mode shim, AND client prediction replay all call it. Never fork it.
 4. All intent enters the sim as a `UserCmd` keyed by playerId (the host stamps
    remote peers'). Never bypass that seam.
-5. Seeded RNG streams only (`math.ts makePrng`, seeded by the rules VM's
-   `STREAMS` reply) — not for cross-machine sync (snapshots make desync
-   impossible) but for reproducible tests/replays; `test/replay.test.ts`
-   enforces it. No `Math.random` in sim scope.
+5. Seeded RNG streams only (`math.ts makePrng`/`deriveSeed`) — not for
+   cross-machine sync (snapshots make desync impossible) but for reproducible
+   tests/replays; `test/replay.test.ts` enforces it. No `Math.random` in sim scope.
 6. Movers are pure functions of tick (`maps/types.ts updateMovers`) so clients can
    render them without replication.
 7. The renderer/HUD stay role-blind: they read Frames via simClient getters only.
-8. **The rules VM is the scoring authority** (`src/rules/`): stream seeds, spawn
-   slots, KO credit, stocks, round results, sudden death and match wins come from
-   `mb_rules_core.c` running as a resident process in the CoreFrame VM
-   (`vendor/coreframe/`, booted in `sim.worker.ts`). The World ADOPTS verdicts and
-   computes none of it; the JS versions are deleted on purpose (a copied bundle
-   cannot score a round). Change a rule → edit the C, `tools/build-rules.sh`,
-   and the parity test (`test/rulesParity.test.ts`) must stay green on native c4m32.
+8. **Scoring lives in the sim** (`sim/world.ts` with `sim/modes.ts`): stream seeds,
+   spawn slots, KO credit, stocks, round results, sudden death and match wins are
+   plain TypeScript. This game was CoreFrame's proof of concept and ran its scoring
+   inside a signed c4 VM for a while; that came out when the game went open source,
+   because a public game has nothing to protect. The integration is kept whole at
+   `CoreFrame/projects/masterblasters/vm-integration/`.
 
 ## Other invariants
 - `src/config.ts` is the single source of truth for tuning (knockback formula
@@ -80,20 +78,16 @@ lockstep. `simClient.ts` runs one of three roles: `local` (worker only), `host`
 - `npm run lint` — `tsc --noEmit`
 - `npm run build` — lint + vite build → `dist/`
 - `npm run serve` — Express serves dist at :3011
+- `npm run gate` — plays a real round in a real browser over CDP (never headless): `?map=`,
+  the recovered geometry and its 3D skybox, the sim scoring a fall. 9224 is the GPU desktop.
 - Browser probes (dev): `window.__mbCmd(msg)` posts raw worker commands,
   `window.__mbProbe()` reads the latest frame, `window.__mbCam` camera state,
-  `window.__mbRoundLog()` the rules VM's frame log + replies (verify-round input).
+  `window.__mbScene()` the render scene (the 3D skybox group, draw counts).
 
 ## Layout
 ```
 src/config.ts          CFG/TUNING/WEAPONS/AI_TIERS/STRIDE — all tuning
-src/math.ts            seeded PRNG streams (seeds from the rules VM), hash helpers
-src/rules/             THE RULES VM: frames.json (schema) → frames.h/.ts (generated),
-                       mb_rules_core.c (the authority, c4lc's C99 subset), rules.ts (the seam),
-                       vmRules.ts (boots vendor/coreframe on public/coreframe/mb_rules.c4r)
-vendor/coreframe/      the CoreFrame runtime, vendored verbatim (CoreFrame/tools/sync-to.sh)
-tools/build-rules.sh   C → mb_rules.c4r (shipped) + the native twin (parity test)
-tools/verify-round.mjs replay a client's frame log (window.__mbRoundLog) server-side
+src/math.ts            seeded PRNG streams (deriveSeed), hash helpers
 src/protocol.ts        UserCmd/Snapshot/MatchSettings — the netcode contract
 src/sim/world.ts       THE SIM: players, round state machine, step order, pack()
 src/sim/movement.ts    shared body integrator (worker AND prediction shim)

@@ -9,7 +9,7 @@ import {
   decodeCmd, decodeSnapshot, encodeCmd, encodeSnapshot, type SnapState, type UserCmd,
 } from '../src/protocol.ts';
 import { World } from '../src/sim/world.ts';
-import { DEFAULT_SETTINGS, testRules } from './helpers.ts';
+import { DEFAULT_SETTINGS } from './helpers.ts';
 
 test('UserCmd round-trips within quantization and is 10 bytes', () => {
   const cmd: UserCmd = {
@@ -31,7 +31,7 @@ test('UserCmd round-trips within quantization and is 10 bytes', () => {
 });
 
 function liveSnapState(): SnapState {
-  const w = new World(777, testRules());
+  const w = new World(777);
   w.apply({ type: 'config', ...DEFAULT_SETTINGS, botCount: 3, seed: 777 });
   // run into live play so there are projectiles and pickups in flight
   for (let i = 0; i < 20 * 60; i++) w.step();

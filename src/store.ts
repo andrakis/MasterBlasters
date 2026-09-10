@@ -69,41 +69,6 @@ interface UiState extends SimState {
   setRoundEvent: (phase: RoundInfo['phase'], winnerTeam: number, winnerName: string) => void;
   setHurt: (amount: number) => void;
   setHitConfirm: () => void;
-
-  /** DEV: the C4KE console over the game (tilde); text is what the kernel printed, last 32K chars,
-   *  with ANSI escapes kept for the renderer. ESC[2J and ESC[H mark where "the screen" starts: the next
-   *  printed text after a home replaces what was drawn since, so raycast's frames update in place */
-  consoleOpen: boolean;
-  consoleText: string;
-  consoleScreenStart: number;
-  consoleHome: boolean;
-  /** raw keys: every keystroke goes to the shell at once (a program reading keys, like raycast) */
-  consoleRaw: boolean;
-  setConsoleOpen: (v: boolean) => void;
-  setConsoleRaw: (v: boolean) => void;
-  appendConsole: (text: string) => void;
-}
-
-const CONSOLE_KEEP = 32768;
-/** fold clear-screen and cursor-home into the log: text after a home overwrites the current screen */
-function foldConsole(prev: string, screenStart: number, home: boolean, incoming: string): { text: string; screenStart: number; home: boolean } {
-  let text = prev;
-  const re = /\x1b\[(2J|H)/g;
-  let at = 0, m: RegExpExecArray | null;
-  const put = (chunk: string) => {
-    if (!chunk) return;
-    if (home) { text = text.slice(0, screenStart); home = false; }
-    text += chunk;
-  };
-  while ((m = re.exec(incoming))) {
-    put(incoming.slice(at, m.index));
-    at = m.index + m[0].length;
-    if (m[1] === '2J') { screenStart = text.length; home = true; }
-    else home = true;
-  }
-  put(incoming.slice(at));
-  if (text.length > CONSOLE_KEEP) { const cut = text.length - CONSOLE_KEEP; text = text.slice(cut); screenStart = Math.max(0, screenStart - cut); }
-  return { text, screenStart, home };
 }
 
 let nextFeedId = 1;
@@ -115,14 +80,6 @@ const urlMap = new URLSearchParams(typeof location !== 'undefined' ? location.se
 const initialMapId = urlMap && urlMap in MAPS ? urlMap : 'mb_test';
 
 export const useStore = create<UiState>((set) => ({
-  consoleOpen: false,
-  consoleText: '',
-  consoleScreenStart: 0,
-  consoleHome: false,
-  consoleRaw: false,
-  setConsoleOpen: (v) => set({ consoleOpen: v }),
-  setConsoleRaw: (v) => set({ consoleRaw: v }),
-  appendConsole: (text) => set((s) => { const f = foldConsole(s.consoleText, s.consoleScreenStart, s.consoleHome, text); return { consoleText: f.text, consoleScreenStart: f.screenStart, consoleHome: f.home }; }),
   tick: 0,
   simTps: 0,
   hud: null,

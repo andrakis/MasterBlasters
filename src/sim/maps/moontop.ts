@@ -7,28 +7,29 @@ import type { MapDef } from './types.ts';
 export const moontop: MapDef = {
   id: 'mb_moontop',
   name: 'MB Moontop',
+  gravityMult: 0.55, // the moon part of moontop
   platforms: [
-    { x: 0, y: -1.5, z: 0, w: 24, h: 3, d: 24 },
+    { x: 0, y: -1.5, z: 0, w: 24, h: 3, d: 24 }, // main crater deck
     { x: 20, y: -1, z: 12, w: 7, h: 2, d: 7 },
     { x: -20, y: -1, z: 12, w: 7, h: 2, d: 7 },
     { x: 20, y: -2, z: -14, w: 7, h: 2, d: 7 },
     { x: -20, y: -2, z: -14, w: 7, h: 2, d: 7 },
-    { x: 10, y: 5, z: 0, w: 5, h: 1, d: 5 },
-    { x: -10, y: 5, z: 0, w: 5, h: 1, d: 5 },
-    { x: 0, y: 9, z: -8, w: 4, h: 1, d: 4 },
+    { x: 10, y: 5, z: 0, w: 5, h: 1, d: 5 }, // high perch east
+    { x: -10, y: 5, z: 0, w: 5, h: 1, d: 5 }, // high perch west
+    { x: 0, y: 9, z: -8, w: 4, h: 1, d: 4 }, // the top of moontop
   ],
   spawnPoints: [
-    { x: 10, y: 0, z: 10, yaw: 2.356194490192345 },
-    { x: -10, y: 0, z: 10, yaw: -2.356194490192345 },
-    { x: 10, y: 0, z: -10, yaw: 0.7853981633974483 },
-    { x: -10, y: 0, z: -10, yaw: -0.7853981633974483 },
-    { x: 20, y: 0, z: 12, yaw: 1.5707963267948966 },
-    { x: -20, y: 0, z: 12, yaw: -1.5707963267948966 },
-    { x: 20, y: -1, z: -14, yaw: 1.5707963267948966 },
-    { x: -20, y: -1, z: -14, yaw: -1.5707963267948966 },
+    { x: 10, y: 0, z: 10, yaw: Math.PI * 0.75 },
+    { x: -10, y: 0, z: 10, yaw: -Math.PI * 0.75 },
+    { x: 10, y: 0, z: -10, yaw: Math.PI * 0.25 },
+    { x: -10, y: 0, z: -10, yaw: -Math.PI * 0.25 },
+    { x: 20, y: 0, z: 12, yaw: Math.PI / 2 },
+    { x: -20, y: 0, z: 12, yaw: -Math.PI / 2 },
+    { x: 20, y: -1, z: -14, yaw: Math.PI / 2 },
+    { x: -20, y: -1, z: -14, yaw: -Math.PI / 2 },
   ],
   pickupSpots: [
-    { x: 0, y: 9.5, z: -8, weight: 2 },
+    { x: 0, y: 9.5, z: -8, weight: 2 }, // the summit — worth the climb
     { x: 0, y: 0, z: 0 },
     { x: 10, y: 5.5, z: 0 },
     { x: -10, y: 5.5, z: 0 },
@@ -36,7 +37,6 @@ export const moontop: MapDef = {
     { x: -20, y: -1, z: -14 },
   ],
   killY: -35,
-  gravityMult: 0.55,
   theme: {
     platform: 0x8b8e96,
     accent: 0xc7cad1,

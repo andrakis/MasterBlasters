@@ -66,3 +66,16 @@ flat (100 of its 142 grids are flat in the BSP too).
   world always paints over it and it can never occlude the arena; fog off (the scene fogs out at 160 m) and the game's dome moved to -2000 so it stays behind
 - [x] Re-extracted egyptarena and outpost (the two with a sky_camera) plus columns; egyptarena's scene.json 5.0 -> 9.5 MB
 - [x] Verified: the editor's waterline view shows the sea and hills as the 2007 screenshot does; in the game 157k triangles drawn against 79k with the backdrop hidden; `test/skybox.test.ts`
+
+## Open source, and the VM that came out (2026-09-10)
+This game was CoreFrame's proof of concept: its scoring ran inside a signed c4 image for a
+while, and it proved the whole platform — native parity, server replay, permuted and signed
+images, in-VM attestation, a C4KE console. It is being released open source, and **a public
+game has nothing to protect**: its rules are readable either way, so the moat bought it
+nothing and the 7 MB of vendored machine was weight. Scoring is plain TypeScript again
+(`sim/world.ts` + `sim/modes.ts` + `math.ts deriveSeed`, restored verbatim from the commit
+that took them out). The integration is kept whole at
+`CoreFrame/projects/masterblasters/vm-integration/` and can be reapplied with one `git apply`.
+What stayed, because it is this game's own work: the BSP recovery pipeline, the four recovered
+2007 maps, the 3D skybox, `?map=`, and a browser gate of its own (`npm run gate`).
+

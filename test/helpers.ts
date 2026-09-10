@@ -7,36 +7,6 @@ import type { MapDef } from '../src/sim/maps/types.ts';
 import { makeBoxes, type Box } from '../src/sim/maps/types.ts';
 import type { PlayerCore } from '../src/sim/types.ts';
 import { World } from '../src/sim/world.ts';
-import { existsSync, readFileSync } from 'node:fs';
-import { VmRules, bareImage, isOpnamesRom, type KernelFiles, type VmAssets } from '../src/rules/vmRules.ts';
-
-// The rules VM, booted from the same files the browser fetches (public/coreframe).
-// One machine per World: boot is a few hundred cycles, so it is cheap.
-let vmAssets: VmAssets | null = null;
-export function testRules(): VmRules {
-  if (!vmAssets) {
-    const base = new URL('../public/coreframe/', import.meta.url);
-    vmAssets = {
-      ucSource: readFileSync(new URL('microcode.uc', base), 'utf8'),
-      fwBytes: bareImage(new Uint8Array(readFileSync(new URL('fw.c4r', base)))),
-      progBytes: bareImage(new Uint8Array(readFileSync(new URL('mb_rules.c4r', base)))),
-    };
-    // a release build's permuted encoding, if the images were built with one
-    const romFile = new URL('opnames.rom', base);
-    if (existsSync(romFile)) { const rom = readFileSync(romFile, 'utf8'); if (isOpnamesRom(rom)) vmAssets.opnames = rom; }
-  }
-  return new VmRules(vmAssets);
-}
-
-/** the same rules under C4KE (DEV's hosting): the kernel + its disk from public/coreframe/kernel */
-export function testKernelRules(): VmRules {
-  testRules();
-  const base = new URL('../public/coreframe/kernel/', import.meta.url);
-  const list = JSON.parse(readFileSync(new URL('files.json', base), 'utf8')) as KernelFiles;
-  const files = new Map<string, Uint8Array>();
-  for (const p of list.disk) { const bytes = new Uint8Array(readFileSync(new URL(p, base))); files.set(p.slice(p.lastIndexOf('/') + 1), p.endsWith('.c4r') ? bareImage(bytes) : bytes); }
-  return new VmRules({ ...vmAssets!, kernel: { kernelBytes: bareImage(new Uint8Array(readFileSync(new URL(list.kernel, base)))), files } });
-}
 
 export function makeTestPlayer(overrides: Partial<PlayerCore> = {}): PlayerCore {
   return {
@@ -91,7 +61,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
 /** New world with a live match, stepped through the countdown into active play. */
 export function liveWorld(overrides: Partial<MatchSettings> = {}): World {
   const settings = { ...DEFAULT_SETTINGS, ...overrides };
-  const w = new World(settings.seed, testRules());
+  const w = new World(settings.seed);
   w.apply({ type: 'config', ...settings });
   while (w.round.phase === 'countdown') w.step();
   return w;

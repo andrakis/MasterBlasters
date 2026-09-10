@@ -9,14 +9,13 @@
 // ============================================================================
 
 import { CFG, TUNING as T, WEAPONS, WPN } from '../config.ts';
-import { makePrng, type Prng } from '../math.ts';
+import { deriveSeed, makePrng, type Prng } from '../math.ts';
 import { BTN, NEUTRAL_CMD, type MatchSettings, type UserCmd } from '../protocol.ts';
 import { stepBot, makeBotState, type BotCtx } from './ai/bot.ts';
 import { MAPS } from './maps/index.ts';
 import { makeBoxes, updateMovers, type Box, type MapDef } from './maps/types.ts';
 import { integrateBody, type MoveInput } from './movement.ts';
-import { MODES, type ModeRules } from './modes.ts';
-import { MODE_IDS, type Rules, type Verdict } from '../rules/rules.ts';
+import { eliminationWinner, livesLeader, MODES, type ModeRules } from './modes.ts';
 import { stepPickups, makeDirector, type DropDirector } from './pickups.ts';
 import { stepProjectiles } from './projectiles.ts';
 import {
@@ -33,6 +32,7 @@ export type Command =
 const HISTORY = 64; // ticks of position history (> LAG_COMP_MAX_TICKS)
 
 const TICK_DT = 1 / CFG.TICK_HZ;
+const KO_CREDIT_TICKS = 5 * CFG.TICK_HZ;
 
 const NINJA_NAMES = ['Kaito', 'Shade', 'Whisper', 'Tanuki', 'Hanzo', 'Mirai', 'Kage'];
 const COWBOY_NAMES = ['Tex', 'Dusty', 'Colt', 'Maverick', 'Cassidy', 'Boone', 'Wade'];
@@ -86,36 +86,11 @@ export class World {
   private matchStartTick = 0;
   private moveInput: MoveInput = { moveX: 0, moveZ: 0, jumpEdge: false, jetHeld: false };
 
-  // The rules authority (src/rules/): stream seeds, spawn slots, KO credit,
-  // lives, round results and match wins come from it; the sim ADOPTS them.
-  readonly rules: Rules;
-  private tickDirty = false; // a fall or respawn happened this tick: ask the rules at the end of it
-
-  constructor(seed: number, rules: Rules) {
+  constructor(seed: number) {
     this.seed = seed;
-    this.rules = rules;
-    // placeholders until startMatch; the real streams come from the rules
-    this.rngDrops = makePrng(seed);
-    this.rngAi = makePrng(seed);
-    this.rngSpawns = makePrng(seed);
-  }
-
-  /** every frame sent to the rules and every reply, for tools/verify-round.mjs */
-  get rulesLog(): { frames: { type: number; payload: number[] }[]; replies: { type: number; payload: number[] }[] } {
-    return { frames: this.rules.log(), replies: this.rules.replies() };
-  }
-
-  /** copy what the rules decided onto the players; body state (alive) stays the sim's */
-  private adopt(v: Verdict): Verdict {
-    for (const p of this.players) {
-      const pv = v.players[p.id];
-      if (pv) { p.lives = pv.lives; p.kos = pv.kos; p.falls = pv.falls; }
-    }
-    if (v.suddenDeath && !this.round.suddenDeath) {
-      this.round.suddenDeath = true;
-      this.events.push({ t: 'round', phase: 'active', winnerTeam: -2, winnerName: 'SUDDEN DEATH' });
-    }
-    return v;
+    this.rngDrops = makePrng(deriveSeed(seed, 0));
+    this.rngAi = makePrng(deriveSeed(seed, 1));
+    this.rngSpawns = makePrng(deriveSeed(seed, 2));
   }
 
   get matchLive(): boolean {
@@ -138,6 +113,9 @@ export class World {
   startMatch(s: MatchSettings): void {
     this.settings = s;
     this.seed = s.seed;
+    this.rngDrops = makePrng(deriveSeed(s.seed, 0));
+    this.rngAi = makePrng(deriveSeed(s.seed, 1));
+    this.rngSpawns = makePrng(deriveSeed(s.seed, 2));
     this.map = MAPS[s.mapId] ?? MAPS.mb_test;
     this.boxes = makeBoxes(this.map);
     this.mode = MODES[s.mode];
@@ -167,19 +145,6 @@ export class World {
     this.round.wins = new Map();
     this.round.roundNumber = 0;
     this.matchStartTick = this.tick;
-    const { streams, verdict } = this.rules.matchStart({
-      seed: s.seed,
-      mode: MODE_IDS.indexOf(this.mode.id),
-      lives: s.lives,
-      roundsToWin: T.ROUNDS_TO_WIN,
-      koCreditTicks: Math.round(T.KO_CREDIT_S * CFG.TICK_HZ),
-      spots: this.map.spawnPoints.length,
-      teams: this.players.map((p) => p.team),
-    });
-    this.rngDrops = makePrng(streams[0]);
-    this.rngAi = makePrng(streams[1]);
-    this.rngSpawns = makePrng(streams[2]);
-    this.adopt(verdict);
     this.startRound();
   }
 
@@ -215,12 +180,11 @@ export class World {
     if (!s) return;
     this.round.roundNumber++;
     this.round.suddenDeath = false;
-    const v = this.adopt(this.rules.roundStart(this.round.roundNumber));
     this.projectiles = [];
     this.pickups = [];
     this.director = makeDirector(this.tick, this.rngDrops);
     for (const p of this.players) {
-      p.lives = v.players[p.id]?.lives ?? s.lives;
+      p.lives = s.lives;
       p.hp = T.PLAYER_HP;
       p.energy = T.JET_ENERGY_MAX;
       p.weapon = WPN.ROCKET;
@@ -231,19 +195,18 @@ export class World {
       p.alive = true;
       p.lastHitBy = -1;
       p.lastHitTick = -1_000_000;
-      this.spawn(p, v.players[p.id]?.slot ?? p.id);
+      this.spawn(p, true);
     }
     this.round.phase = 'countdown';
     this.round.phaseEndsTick = this.tick + Math.round(T.COUNTDOWN_S * CFG.TICK_HZ);
     this.events.push({ t: 'round', phase: 'countdown', winnerTeam: -1, winnerName: '' });
   }
 
-  /** Place a (re)spawning player: at the rules' slot on a round start, else at
-   *  the point farthest from living enemies. */
-  private spawn(p: PlayerCore, slot = -1): void {
+  /** Place a (re)spawning player at the point farthest from living enemies. */
+  private spawn(p: PlayerCore, roundStart = false): void {
     const spots = this.map.spawnPoints;
-    let best = slot >= 0 ? spots[slot % spots.length] : spots[0];
-    if (slot < 0) {
+    let best = roundStart ? spots[p.id % spots.length] : spots[0];
+    if (!roundStart) {
       let bestScore = -Infinity;
       for (const sp of spots) {
         let nearest = Infinity;
@@ -273,13 +236,16 @@ export class World {
     p.alive = true;
   }
 
-  private endRound(v: Verdict): void {
-    const winnerTeam = v.winnerTeam;
+  private endRound(winnerTeam: number): void {
     this.round.lastWinner = winnerTeam;
-    const matchOver = v.matchOver;
+    let matchOver = false;
     let name = 'Draw';
-    this.round.wins = new Map(v.wins.map((n, team) => [team, n] as [number, number]).filter(([, n]) => n > 0));
-    if (winnerTeam >= 0) name = this.mode.teamName(winnerTeam, this.players);
+    if (winnerTeam >= 0) {
+      const wins = (this.round.wins.get(winnerTeam) ?? 0) + 1;
+      this.round.wins.set(winnerTeam, wins);
+      matchOver = wins >= T.ROUNDS_TO_WIN;
+      name = this.mode.teamName(winnerTeam, this.players);
+    }
     this.round.phase = matchOver ? 'matchEnd' : 'roundEnd';
     this.round.phaseEndsTick = this.tick + Math.round(T.ROUND_END_S * CFG.TICK_HZ);
     this.events.push({
@@ -383,21 +349,21 @@ export class World {
     for (const p of this.players) {
       if (!p.alive || p.y >= this.map.killY) continue;
       p.alive = false;
-      // the rules decrement the stock and award the KO credit; we adopt both
-      const v = this.adopt(this.rules.fall(this.tick, p.id, p.lastHitBy, p.lastHitTick));
-      this.tickDirty = true;
-      this.events.push({ t: 'ko', victim: p.id, attacker: v.credit?.attacker ?? -1 });
+      p.falls++;
+      if (r.phase === 'active' || r.phase === 'countdown') p.lives--;
+      const credit =
+        p.lastHitBy >= 0 && this.tick - p.lastHitTick <= KO_CREDIT_TICKS && p.lastHitBy !== p.id
+          ? p.lastHitBy
+          : -1;
+      if (credit >= 0) this.players[credit].kos++;
+      this.events.push({ t: 'ko', victim: p.id, attacker: credit });
       if (p.lives > 0) p.respawnAtTick = this.tick + Math.round(T.RESPAWN_S * CFG.TICK_HZ);
     }
 
     // 6) respawns
     if (active) {
       for (const p of this.players) {
-        if (!p.alive && p.lives > 0 && this.tick >= p.respawnAtTick) {
-          this.spawn(p);
-          this.rules.spawn(this.tick, p.id);
-          this.tickDirty = true;
-        }
+        if (!p.alive && p.lives > 0 && this.tick >= p.respawnAtTick) this.spawn(p);
       }
     }
 
@@ -409,20 +375,26 @@ export class World {
           ? this.tick + Math.round(T.TIMED_ROUND_S * CFG.TICK_HZ)
           : Number.MAX_SAFE_INTEGER;
         this.events.push({ t: 'round', phase: 'active', winnerTeam: -1, winnerName: '' });
-        this.tickDirty = true; // a countdown fall is judged on the first active tick
       }
     } else if (r.phase === 'active') {
-      // The verdict only changes at a fall, a respawn, or the timer, so the
-      // rules are asked at the end of exactly those ticks.
-      let v: Verdict | null = null;
-      if (this.mode.usesTimer && !r.suddenDeath && this.tick >= r.phaseEndsTick) v = this.adopt(this.rules.timer(this.tick));
-      else if (this.tickDirty) v = this.adopt(this.rules.tickEnd(this.tick));
-      if (v && v.result !== 'continue') this.endRound(v);
+      let winner = eliminationWinner(this.players);
+      if (winner === null && this.mode.usesTimer) {
+        if (r.suddenDeath) {
+          // next KO decides: any unique lives leader ends it
+          winner = livesLeader(this.players);
+        } else if (this.tick >= r.phaseEndsTick) {
+          winner = livesLeader(this.players);
+          if (winner === null) {
+            r.suddenDeath = true;
+            this.events.push({ t: 'round', phase: 'active', winnerTeam: -2, winnerName: 'SUDDEN DEATH' });
+          }
+        }
+      }
+      if (winner !== null) this.endRound(winner);
     } else if (r.phase === 'roundEnd') {
       if (this.tick >= r.phaseEndsTick) this.startRound();
     }
     // matchEnd: hold until the menu sends a new config
-    this.tickDirty = false;
   }
 
   /** Historical position of `q`, `lagTicks` ago — the HL2-style hitscan rewind.

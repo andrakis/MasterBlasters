@@ -3,8 +3,6 @@ import { Canvas } from '@react-three/fiber';
 import { TUNING } from './config.ts';
 import { Scene } from './scene/Scene.tsx';
 import { Hud } from './ui/Hud.tsx';
-import { Console } from './ui/Console.tsx';
-import { DEBUG } from './simClient.ts';
 import { Menu } from './ui/Menu.tsx';
 import { startSim } from './simClient.ts';
 import { useStore } from './store.ts';
@@ -33,7 +31,6 @@ export function App() {
         </>
       )}
       {appPhase === 'menu' && <Menu />}
-      {DEBUG && <Console />}
     </>
   );
 }

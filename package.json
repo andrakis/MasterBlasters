@@ -7,10 +7,11 @@
     "dev": "vite --host",
     "lint": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "build": "npm run lint && vite build && rm -rf dist/coreframe/kernel/userland && node -e \"const f='dist/coreframe/kernel/files.json',j=require('./'+f);j.disk=j.disk.filter(p=>!p.startsWith('userland/'));require('fs').writeFileSync(f,JSON.stringify(j,null,1))\"",
+    "build": "npm run lint && vite build",
     "preview": "vite preview",
     "serve": "node server/index.js",
-    "start": "npm run build && npm run serve"
+    "start": "npm run build && npm run serve",
+    "gate": "node tools/gate.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

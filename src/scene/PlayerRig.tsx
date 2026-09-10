@@ -59,7 +59,7 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
   useEffect(() => {
     const canvas = gl.domElement;
     const requestLock = () => {
-      if (useStore.getState().appPhase === 'playing' && !useStore.getState().consoleOpen) canvas.requestPointerLock();
+      if (useStore.getState().appPhase === 'playing') canvas.requestPointerLock();
     };
     const onLockChange = () => {
       locked.current = document.pointerLockElement === canvas;
@@ -96,7 +96,6 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
       pendingWeapon.current = w;
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (useStore.getState().consoleOpen) return;   // the C4KE console has the keyboard
       if (!locked.current) return;
       switch (e.code) {
         case 'KeyW': case 'ArrowUp': keys.current.f = true; break;
@@ -116,7 +115,6 @@ export function PlayerRig({ map, boxes }: { map: MapDef; boxes: Box[] }) {
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (useStore.getState().consoleOpen) return;
       switch (e.code) {
         case 'KeyW': case 'ArrowUp': keys.current.f = false; break;
         case 'KeyS': case 'ArrowDown': keys.current.b = false; break;

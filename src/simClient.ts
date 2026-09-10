@@ -62,28 +62,6 @@ export interface Frame {
 export type NetRole = 'local' | 'host' | 'client';
 
 let worker: Worker | null = null;
-
-/**
- * Debug or release, and how to pick:
- *   dev server (npm run dev)     debug -- the rules run under C4KE, tilde opens the console
- *   npm run build && preview     release -- the rules run BARE on the firmware, attested, no console
- *   ?debug=0  (or off/false/no)  release behaviour on the dev server
- *   ?debug    (or =1)            debug behaviour on a built bundle, if its kernel files are still there
- * The release path is the one a player gets: one task on bare metal, nothing to schedule.
- */
-export const DEBUG = (() => {
-  const flag = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('debug') : null;
-  if (flag !== null) return !/^(0|off|false|no)$/i.test(flag);
-  return import.meta.env.DEV;
-})();
-
-// what the kernel prints arrives every sim tick; the store (and the console's ANSI renderer) sees it 20 times a second
-let consolePending = '';
-let consoleTimer: ReturnType<typeof setTimeout> | null = null;
-function flushConsolePending(): void { consoleTimer = null; const t = consolePending; consolePending = ''; if (t) useStore.getState().appendConsole(t); }
-
-/** type a line at the kernel's shell (the console UI) */
-export function sendConsole(text: string): void { worker?.postMessage({ type: 'consoleInput', text }); }
 let latest: Frame | null = null;
 let prev: Frame | null = null;
 let latestAt = 0;
@@ -108,7 +86,6 @@ const pendingFx: SimEvent[] = [];
 // Client prediction: cmds sent but not yet folded into a snapshot (PlayerRig
 // replays these through the shared integrator on every rebase).
 const pendingCmds: UserCmd[] = [];
-let rulesDumpResolve: ((v: { frames: unknown[]; replies: unknown[] }) => void) | null = null;
 
 // The local player's most recent confirmed shot (viewmodel kick/swing timing).
 const lastLocalFire = { at: 0, weapon: 0 };
@@ -119,8 +96,6 @@ declare global {
   interface Window {
     __mbCmd?: (msg: Record<string, unknown>) => void;
     __mbProbe?: () => Record<string, unknown> | null;
-    /** DEV: the rules VM's frame log + replies (tools/verify-round.mjs input) */
-    __mbRoundLog?: () => Promise<{ frames: unknown[]; replies: unknown[] }>;
   }
 }
 
@@ -222,14 +197,7 @@ export function startSim(): void {
     };
   }
   worker = new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' });
-  if (typeof window !== 'undefined') {
-    window.__mbRoundLog = () => new Promise((res) => { rulesDumpResolve = res; worker?.postMessage({ type: 'rulesDump' }); });
-  }
   worker.onmessage = (e: MessageEvent<Frame>) => {
-    const raw = e.data as unknown as { type: string };
-    if (raw.type === 'rulesDump') { rulesDumpResolve?.(raw as unknown as { frames: unknown[]; replies: unknown[] }); rulesDumpResolve = null; return; }
-    if (raw.type === 'rulesError') { console.error('rules VM:', (raw as unknown as { message: string }).message); return; }
-    if (raw.type === 'console') { consolePending += (raw as unknown as { text: string }).text; if (!consoleTimer) consoleTimer = setTimeout(flushConsolePending, 50); return; }
     const m = e.data;
     if (m.type !== 'frame') return;
     if (netRole === 'client') return; // clients live on snapshots, not the local worker
@@ -248,7 +216,7 @@ export function startSim(): void {
       }
     }
   };
-  worker.postMessage({ type: 'init', debug: DEBUG });
+  worker.postMessage({ type: 'init' });
 }
 
 // --- reads for the renderer ----------------------------------------------------------

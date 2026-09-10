@@ -89,68 +89,7 @@ whole headless bot matches (Banner style: outcomes, not internals), and the repl
 fingerprint. Browser verification via playwright + `__mbCmd`/`__mbProbe`/`__mbCam`.
 
 
-## 8. The rules VM (CoreFrame)
-
-Scoring is not computed in TypeScript. `src/rules/mb_rules_core.c` is a resident process
-in the CoreFrame VM — the c4bb simulator of the c4m ISA, vendored under `vendor/coreframe/`
-and booted in `sim.worker.ts` beside the World from `public/coreframe/{microcode.uc, fw.c4r,
-mb_rules.c4r}`. The World sends frames (`src/rules/frames.json`: MATCH_START, ROUND_START,
-FALL, SPAWN, TIMER, TICK_END) through a shared-RAM mailbox and adopts the VERDICT replies:
-stream seeds, spawn slots, KO credit, stocks, round results, sudden death, match wins.
-Calls are synchronous and event-rate (a handful per round, ~1k guest cycles each).
-
-Why: a copied bundle cannot score a round without the image, and the same image replays
-on a server — `tools/verify-round.mjs` re-runs a client's frame log (`window.__mbRoundLog()`)
-on the node host and, with `--native`, under native c4m32 (`test/fixtures/mb_rules_native.c4r`,
-the same core through a file log). `test/rulesParity.test.ts` pins both hosts identical.
-Rebuild after editing the C: `tools/build-rules.sh` (needs ../CoreFrame and ~/git/c4).
-
-## 9. The C4KE console (DEV builds and `?debug`)
-
-**Which build am I in?** The dev server is debug and a built bundle is release; `?debug=0`
-gives you the release path on the dev server (bare VM, attested, no console — what a player
-runs), and `?debug` forces the debug path on a build whose `coreframe/kernel/` is still
-there. The status is visible without asking: in debug the tilde console exists at all, and
-`ps` shows the rules as a kernel task.
-
-In a dev build the rules VM boots **under C4KE** instead of bare: the vendored kernel host
-loads `public/coreframe/kernel/c4ke32.c4r` and its binaries-only disk (`init`, `c4sh`,
-`c4ke.vfs`, `vfsload`, `top`, `ps`, and `mb_rules_k.c4r` — the same rules unit linked with
-`cf_kmain.c`, the kernel's mailbox opcodes — all permuted and signed like the rest), starts
-`mb_rules_k.c4r &` as a background job and `top -d 5000 &` at the shell. The sim worker
-gives the OS a slice each tick (`rules.breathe(OS_CYCLES)`, cheap when it is idle) and relays
-what the kernel prints; **tilde** drops a Quake-style console over the game
-(`src/ui/Console.tsx`) where you watch top refresh every 5 s of real time and type at
-c4sh (`ps`, `top -d 1000 &`, `kill`, …). While it is open the game's keys and pointer lock
-stand aside; tilde or Escape closes it. Release builds stay bare and attested; the replay
-verifier (`verify-round`) is bare too, and the gate proves a round played under the kernel
-verifies against it — the verdicts are the same unit's (`test/kernelParity.test.ts` pins
-bare == kernel reply for reply). Not cycle-deterministic (the kernel's clock follows real
-time here), which the release path does not need. The kernel host wakes the module by the
-scheduler's scan, not an interrupt: an interrupt landing while `top` is woken wedges C4KE
-(CoreFrame docs/messaging.md).
-**The dev disk.** The whole C4KE userland ships beside the kernel in dev builds
-(`public/coreframe/kernel/userland/`, 41 binaries: `ls cat type xxd echo kill spin c4le
-c4rdump c4rlink c4 c4m c4cc eshell` and the toys `hello mandel raycast rps factorial tests …`,
-listed by `kernel/files.json`, permuted and signed like everything else; a binaries-only
-`c4ke.vfs.txt` puts them at `/bin` and `/home/user`). `ls /home/user` (c4sh takes absolute
-paths), `mandel`, `raycast` then `q`. The console renders ANSI colours (`src/ui/ansi.ts`) and
-folds clear/home so a program that redraws its screen updates in place; **raw keys**
-(the button, or Ctrl+R) sends every keystroke straight through, which raycast wants.
-`npm run build` prunes `userland/` from the release bundle and its entries from
-`files.json`; the kernel core stays so `?debug` works on a deploy.
-**A hog at the console does not stop the game.** `mandel` or `raycast` only slows the rules
-down (an exchange costs ~10k cycles beside a background hog, ~200k beside a foreground one,
-against a 20M budget), because an exchange waits for the MODULE to say it is done, not for the
-whole machine to fall idle. If one ever did outlast the budget the console says so and the
-exchange gives back what it has. What still stops the game is a missing verdict — the VM is the
-authority and a game that scored itself would be worse — and then the sim keeps breathing the
-OS so the console survives to show you why.
-Gate: `tools/vm-gate.mjs` opens the console with a real tilde, sees top's rows and the rules
-task, types `ps`, `ls /home/user` and `hello`, runs `mandel` while the match plays (the tick
-keeps advancing) and checks the shell still answers, then closes it.
-
-## 10. The 3D skybox
+## 8. The 3D skybox
 Source maps put their distant scenery in a **3D skybox**: geometry modelled at 1/16 scale
 somewhere else in the map, which the engine draws scaled up around the player. egyptarena's
 rocky banks and its sea are almost all of it — 146 of the map's 288 displacement grids, and
@@ -171,7 +110,7 @@ the rest work:
 - and it takes **no fog** — the scene fogs out at 160 m and the backdrop sits at hundreds, so
   the world's weather would swallow it whole. Source fogs it with the sky_camera's own
   settings, which this map disables.
-The game's gradient dome moved to `renderOrder -2000` so it stays behind the backdrop.
+The game's gradient dome sits at `renderOrder -2000` so it stays behind the backdrop.
 Pinned by `test/skybox.test.ts`: a sky payload exactly when the map has a `sky_camera`, valid
 material and index references, the back-to-front order, twelve-of-twelve azimuth coverage, and
 a playfield that is nowhere near the backdrop's radius. `window.__mbScene()` is a dev handle on

@@ -6,10 +6,10 @@ import assert from 'node:assert/strict';
 import { CFG, STRIDE, P, WPN } from '../src/config.ts';
 import { BTN, NEUTRAL_CMD } from '../src/protocol.ts';
 import { World } from '../src/sim/world.ts';
-import { DEFAULT_SETTINGS, testRules } from './helpers.ts';
+import { DEFAULT_SETTINGS } from './helpers.ts';
 
 function twoHumanWorld(seed = 555, withBot = false): World {
-  const w = new World(seed, testRules());
+  const w = new World(seed);
   w.apply({
     type: 'config', ...DEFAULT_SETTINGS, seed,
     roster: [
@@ -102,7 +102,7 @@ test('lag-compensated sniper hits where the shooter SAW the target', () => {
 });
 
 test('solo settings still synthesize You + bots (back-compat)', () => {
-  const w = new World(1, testRules());
+  const w = new World(1);
   w.apply({ type: 'config', ...DEFAULT_SETTINGS, botCount: 2, seed: 1 });
   assert.equal(w.players.length, 3);
   assert.equal(w.players[0].name, 'You');
