@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/ctrl.js @ 45eef6a -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/ctrl.js @ 5092f46 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // ctrl.js - the control words shared by worker.js and client.js (a small
 // SharedArrayBuffer beside the arena). Kept apart so the page can import them
 // without importing the worker's body.

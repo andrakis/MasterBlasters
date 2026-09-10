@@ -28,9 +28,10 @@ export interface VmAssets {
   kernel?: { kernelBytes: Uint8Array; files: Map<string, Uint8Array> } | null;
 }
 
-/** the kernel's disk, shipped beside the rules (binaries only): init, the shell, the vfs service, its loader,
- *  top, ps, and the rules unit linked for C4KE (cf_kmain.c: the kernel's mailbox opcodes) */
-export const KERNEL_DISK = ['init', 'c4sh', 'c4ke.vfs', 'vfsload', 'top', 'ps', 'mb_rules_k'] as const;
+/** the kernel's disk is listed by public/coreframe/kernel/files.json (build-rules writes it): the four the
+ *  kernel needs, top, ps, the rules unit linked for C4KE (mb_rules_k), the vfs manifest, and in dev the
+ *  whole C4KE userland (ls, cat, xxd, c4cc, mandel, raycast, …) -- every .c4r verified against the release key */
+export interface KernelFiles { kernel: string; disk: string[] }
 
 export const VM_ASSET_URLS = { ucSource: 'coreframe/microcode.uc', fwBytes: 'coreframe/fw.c4r', progBytes: 'coreframe/mb_rules.c4r', opnames: 'coreframe/opnames.rom' } as const;
 
@@ -52,10 +53,16 @@ export async function fetchVmAssets(base = '/', { kernel = false } = {}): Promis
     opnames: rom && isOpnamesRom(rom) ? rom : null,
   };
   if (kernel) {
-    const get = async (path: string) => { const r = await fetch(base + path); if (!r.ok) throw new Error(`${path} ${r.status}`); return verifiedImage(new Uint8Array(await r.arrayBuffer()), path); };
+    const list = await fetch(base + 'coreframe/kernel/files.json').then((r) => { if (!r.ok) throw new Error(`kernel/files.json ${r.status}`); return r.json() as Promise<KernelFiles>; });
+    const get = async (path: string) => {
+      const r = await fetch(base + 'coreframe/kernel/' + path);
+      if (!r.ok) throw new Error(`kernel/${path} ${r.status}`);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      return path.endsWith('.c4r') ? verifiedImage(bytes, path) : bytes;   // the vfs manifest is text
+    };
     const files = new Map<string, Uint8Array>();
-    for (const n of KERNEL_DISK) files.set(`${n}.c4r`, await get(`coreframe/kernel/disk/${n}.c4r`));
-    assets.kernel = { kernelBytes: await get('coreframe/kernel/c4ke32.c4r'), files };
+    await Promise.all(list.disk.map(async (p) => files.set(p.slice(p.lastIndexOf('/') + 1), await get(p))));
+    assets.kernel = { kernelBytes: await get(list.kernel), files };
   }
   return assets;
 }

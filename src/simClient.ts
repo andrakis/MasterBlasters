@@ -66,6 +66,11 @@ let worker: Worker | null = null;
 /** DEV builds and `?debug`: the rules run under C4KE and the tilde console is live */
 export const DEBUG = import.meta.env.DEV || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug'));
 
+// what the kernel prints arrives every sim tick; the store (and the console's ANSI renderer) sees it 20 times a second
+let consolePending = '';
+let consoleTimer: ReturnType<typeof setTimeout> | null = null;
+function flushConsolePending(): void { consoleTimer = null; const t = consolePending; consolePending = ''; if (t) useStore.getState().appendConsole(t); }
+
 /** type a line at the kernel's shell (the console UI) */
 export function sendConsole(text: string): void { worker?.postMessage({ type: 'consoleInput', text }); }
 let latest: Frame | null = null;
@@ -213,7 +218,7 @@ export function startSim(): void {
     const raw = e.data as unknown as { type: string };
     if (raw.type === 'rulesDump') { rulesDumpResolve?.(raw as unknown as { frames: unknown[]; replies: unknown[] }); rulesDumpResolve = null; return; }
     if (raw.type === 'rulesError') { console.error('rules VM:', (raw as unknown as { message: string }).message); return; }
-    if (raw.type === 'console') { useStore.getState().appendConsole((raw as unknown as { text: string }).text); return; }
+    if (raw.type === 'console') { consolePending += (raw as unknown as { text: string }).text; if (!consoleTimer) consoleTimer = setTimeout(flushConsolePending, 50); return; }
     const m = e.data;
     if (m.type !== 'frame') return;
     if (netRole === 'client') return; // clients live on snapshots, not the local worker

@@ -122,6 +122,16 @@ bare == kernel reply for reply). Not cycle-deterministic (the kernel's clock fol
 time here), which the release path does not need. The kernel host wakes the module by the
 scheduler's scan, not an interrupt: an interrupt landing while `top` is woken wedges C4KE
 (CoreFrame docs/messaging.md).
+**The dev disk.** The whole C4KE userland ships beside the kernel in dev builds
+(`public/coreframe/kernel/userland/`, 41 binaries: `ls cat type xxd echo kill spin c4le
+c4rdump c4rlink c4 c4m c4cc eshell` and the toys `hello mandel raycast rps factorial tests …`,
+listed by `kernel/files.json`, permuted and signed like everything else; a binaries-only
+`c4ke.vfs.txt` puts them at `/bin` and `/home/user`). `ls /home/user` (c4sh takes absolute
+paths), `mandel`, `raycast` then `q`. The console renders ANSI colours (`src/ui/ansi.ts`) and
+folds clear/home so a program that redraws its screen updates in place; **raw keys**
+(the button, or Ctrl+R) sends every keystroke straight through, which raycast wants.
+`npm run build` prunes `userland/` from the release bundle and its entries from
+`files.json`; the kernel core stays so `?debug` works on a deploy.
 Gate: `tools/vm-gate.mjs` opens the console with a real tilde, sees top's rows and the rules
-task, types `ps`, closes it.
+task, types `ps`, `ls /home/user` and `hello`, closes it.
 

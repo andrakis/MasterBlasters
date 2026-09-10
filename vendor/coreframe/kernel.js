@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/kernel.js @ 45eef6a -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/kernel.js @ 5092f46 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // kernel.js - the kernel host: C4KE on the machine, the game's module a task
 // bound to the mailbox (c4 extensions/c4ke_mbox.c), more tasks beside it.
 //

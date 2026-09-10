@@ -349,3 +349,5 @@ input[type='range'] { width: 100%; accent-color: var(--accent); margin: 6px 0 12
 .console form { display: flex; gap: 8px; padding: 6px 12px; border-top: 1px solid #2c3440; background: rgba(0,0,0,0.35); }
 .console .prompt { color: #8fd18f; }
 .console input { flex: 1; background: none; border: 0; color: #fff; font: inherit; outline: none; }
+.console .raw-toggle { background: #1e2530; color: #cfe3c8; border: 1px solid #2c3440; border-radius: 3px; padding: 0 8px; font: inherit; cursor: pointer; }
+.console pre span { border-radius: 0; }

@@ -79,6 +79,13 @@ await page.keyboard.press('Enter');
 const psAnswered = (t) => { const at = t.lastIndexOf('ps\n'); return at >= 0 && /Tasks:[\s\S]*?mb_rules_k\.c4r[\s\S]*?total memory[^\n]*\nc4sh>/.test(t.slice(at)); };
 await page.waitForFunction(() => { const t = document.querySelector('.console pre')?.textContent ?? ''; const at = t.lastIndexOf('ps\n'); return at >= 0 && /Tasks:[\s\S]*?mb_rules_k\.c4r[\s\S]*?total memory[^\n]*\nc4sh>/.test(t.slice(at)); }, null, { timeout: 8000 }).catch(() => {});
 check(psAnswered(await consoleText()), 'a typed ps was answered by the shell (the echo, then a task list ending in a prompt)');
+// the dev disk: the C4KE userland is there (ls of /home/user shows the toys), and hello answers
+await page.keyboard.type('ls /home/user'); await page.keyboard.press('Enter');
+await page.waitForFunction(() => /raycast[\s\S]*entries in \/home\/user/.test(document.querySelector('.console pre')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => {});
+check(/mandel[\s\S]*raycast[\s\S]*entries in \/home\/user/.test(await consoleText()), 'ls /home/user lists the toys from the dev disk');
+await page.keyboard.type('hello'); await page.keyboard.press('Enter');
+await page.waitForFunction(() => /hello\n[\s\S]*yello/.test(document.querySelector('.console pre')?.textContent ?? ''), null, { timeout: 8000 }).catch(() => {});
+check(/hello\n[\s\S]*yello/.test(await consoleText()), 'hello ran from the userland');
 check(!(await page.evaluate(() => !!document.pointerLockElement)), 'the pointer is free while the console is open');
 await page.keyboard.press('Backquote');
 await page.waitForTimeout(300);

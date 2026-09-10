@@ -8,7 +8,7 @@ import { makeBoxes, type Box } from '../src/sim/maps/types.ts';
 import type { PlayerCore } from '../src/sim/types.ts';
 import { World } from '../src/sim/world.ts';
 import { existsSync, readFileSync } from 'node:fs';
-import { KERNEL_DISK, VmRules, bareImage, isOpnamesRom, type VmAssets } from '../src/rules/vmRules.ts';
+import { VmRules, bareImage, isOpnamesRom, type KernelFiles, type VmAssets } from '../src/rules/vmRules.ts';
 
 // The rules VM, booted from the same files the browser fetches (public/coreframe).
 // One machine per World: boot is a few hundred cycles, so it is cheap.
@@ -32,9 +32,10 @@ export function testRules(): VmRules {
 export function testKernelRules(): VmRules {
   testRules();
   const base = new URL('../public/coreframe/kernel/', import.meta.url);
+  const list = JSON.parse(readFileSync(new URL('files.json', base), 'utf8')) as KernelFiles;
   const files = new Map<string, Uint8Array>();
-  for (const n of KERNEL_DISK) files.set(`${n}.c4r`, bareImage(new Uint8Array(readFileSync(new URL(`disk/${n}.c4r`, base)))));
-  return new VmRules({ ...vmAssets!, kernel: { kernelBytes: bareImage(new Uint8Array(readFileSync(new URL('c4ke32.c4r', base)))), files } });
+  for (const p of list.disk) { const bytes = new Uint8Array(readFileSync(new URL(p, base))); files.set(p.slice(p.lastIndexOf('/') + 1), p.endsWith('.c4r') ? bareImage(bytes) : bytes); }
+  return new VmRules({ ...vmAssets!, kernel: { kernelBytes: bareImage(new Uint8Array(readFileSync(new URL(list.kernel, base)))), files } });
 }
 
 export function makeTestPlayer(overrides: Partial<PlayerCore> = {}): PlayerCore {
