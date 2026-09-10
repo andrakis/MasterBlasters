@@ -150,3 +150,33 @@ Gate: `tools/vm-gate.mjs` opens the console with a real tilde, sees top's rows a
 task, types `ps`, `ls /home/user` and `hello`, runs `mandel` while the match plays (the tick
 keeps advancing) and checks the shell still answers, then closes it.
 
+## 10. The 3D skybox
+Source maps put their distant scenery in a **3D skybox**: geometry modelled at 1/16 scale
+somewhere else in the map, which the engine draws scaled up around the player. egyptarena's
+rocky banks and its sea are almost all of it — 146 of the map's 288 displacement grids, and
+only 3 of those 146 are flat, while 100 of the 142 in the playable area are. The recovery used
+to drop the lot (a miniature drawn where it sits rings the level with wrongly-sized terrain),
+which is why the arena looked like it stood on a flat sand shelf.
+
+`tools/bsp/extract.mjs` now emits it as `sky` in scene.json: vertices **relative to the
+sky_camera and already multiplied by its scale**, so a renderer's whole job is to keep the
+group on the camera. What you see of a backdrop is only its directions, which is what makes
+the rest work:
+- a **uniform scale about that anchor changes nothing on screen**, so the group is shrunk to
+  fit inside whatever far plane it meets (500 m in the game, thousands in the editor);
+- its triangles are sorted **back-to-front from the anchor at extract time**, so it can be
+  drawn with **no depth at all** (`depthTest` and `depthWrite` off, `renderOrder -1000`) and
+  still be right from every angle. The world then always paints over it, and it can never
+  occlude the arena however near a piece of it lands;
+- and it takes **no fog** — the scene fogs out at 160 m and the backdrop sits at hundreds, so
+  the world's weather would swallow it whole. Source fogs it with the sky_camera's own
+  settings, which this map disables.
+The game's gradient dome moved to `renderOrder -2000` so it stays behind the backdrop.
+Pinned by `test/skybox.test.ts`: a sky payload exactly when the map has a `sky_camera`, valid
+material and index references, the back-to-front order, twelve-of-twelve azimuth coverage, and
+a playfield that is nowhere near the backdrop's radius. `window.__mbScene()` is a dev handle on
+the render scene (the sky group, draw counts, `setSkyVisible`) for the browser gates.
+
+The 2D sky texture above the horizon is still the game's own dome, not the map's skybox
+cubemap; and egyptarena's scene.json roughly doubles to 9.5 MB, which is the price of 77k
+triangles of backdrop.

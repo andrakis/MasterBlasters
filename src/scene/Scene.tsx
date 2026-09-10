@@ -4,6 +4,7 @@
 // collision always agree.
 
 import { useCallback, useMemo, useState } from 'react';
+import * as THREE from 'three';
 import { useStore } from '../store.ts';
 import { MAPS } from '../sim/maps/index.ts';
 import { makeBoxes } from '../sim/maps/types.ts';
@@ -15,6 +16,8 @@ import { Projectiles } from './Projectiles.tsx';
 import { Pickups } from './Pickups.tsx';
 import { Effects } from './Effects.tsx';
 import { FpsMeter } from './FpsMeter.tsx';
+import { useEffect } from 'react';
+import { useThree } from '@react-three/fiber';
 
 export function Scene() {
   const mapId = useStore((s) => s.mapId);
@@ -42,12 +45,40 @@ export function Scene() {
       <Pickups />
       <Effects />
       <FpsMeter />
+      <DevProbe />
     </>
   );
 }
 
+/** DEV: a handle on the render scene for the browser gates (window.__mbScene()). */
+function DevProbe() {
+  const { scene, camera, gl } = useThree();
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __mbScene?: unknown }).__mbScene = () => {
+      let found: THREE.Object3D | undefined;
+      scene.traverse((o) => { if (o.name === 'skybox') found = o; });
+      const s = found ? { obj: found, kids: found.children as THREE.Mesh[] } : null;
+      return {
+        camera: { pos: camera.position.toArray(), far: (camera as THREE.PerspectiveCamera).far },
+        render: { tris: gl.info.render.triangles, calls: gl.info.render.calls },
+        sky: s && {
+          pos: s.obj.position.toArray(), scale: s.obj.scale.x, meshes: s.kids.length, visible: s.obj.visible,
+          tris: s.kids.reduce((n, m) => n + (m.geometry.index?.count ?? 0) / 3, 0),
+          order: s.kids[0]?.renderOrder, depthTest: (s.kids[0]?.material as THREE.Material)?.depthTest,
+          fog: (s.kids[0]?.material as THREE.MeshBasicMaterial)?.fog,
+        },
+        setSkyVisible: (v: boolean) => { if (s) s.obj.visible = v; },
+      };
+    };
+  }, [scene, camera, gl]);
+  return null;
+}
+
 // Inverted gradient dome. Cheap, theme-driven, and reads as "void below" because
-// the bottom hemisphere runs darker than the horizon fog.
+// the bottom hemisphere runs darker than the horizon fog. It is the FIRST thing drawn
+// (renderOrder -2000): a recovered map's 3D skybox paints over its lower half at -1000,
+// and the world over both.
 function Sky({ top, bottom }: { top: number; bottom: number }) {
   const args = useMemo(
     () =>
@@ -83,7 +114,7 @@ function Sky({ top, bottom }: { top: number; bottom: number }) {
   );
 
   return (
-    <mesh frustumCulled={false} renderOrder={-10}>
+    <mesh frustumCulled={false} renderOrder={-2000}>
       <sphereGeometry args={[400, 24, 16]} />
       <shaderMaterial args={args as unknown as [Record<string, unknown>]} />
     </mesh>

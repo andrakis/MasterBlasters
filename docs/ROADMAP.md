@@ -48,3 +48,21 @@
 - Real character models/animation; saber trail; nuke mushroom
 - Spectator camera after elimination; match stats screen
 - More original maps: mb_columns, mb_egyptarena, mb_outpost, mb_pirates
+
+## The 3D skybox (2026-09-10, user request)
+egyptarena's dramatic banks and sea are its **3D skybox**: 146 of the map's 288 displacement
+grids, built at 1/16 scale near a `sky_camera` and drawn by the engine scaled up around the
+player. `extract.mjs` dropped them (a miniature drawn in place rings the level with wrongly
+sized terrain), so the recovered map has only the playable terrain — which really is mostly
+flat (100 of its 142 grids are flat in the BSP too).
+- [x] `extract.mjs`: emit the skybox as its own `sky: { scale, radius, groups }` in scene.json,
+  vertices RELATIVE to the sky camera and multiplied by `sky_camera.scale`, so a renderer only
+  has to keep the group on the camera. Triangles sorted back-to-front from the anchor at build
+  time (on the rounded values the file stores, so the order in it is exact), so painter's order is right from every angle without a depth pass — egyptarena 169 faces/77k tris/radius 1578 m, outpost 141 faces/33k tris
+- [x] Fix the normal transform while there: the source→three conversion's playfield SHIFT was
+  being applied to normals as well as positions, which points every normal the same way
+- [x] Renderers anchor it: `editor/src/viewport/reference.ts` + the viewport's frame loop, and
+  the game's `BspWorld.tsx`; materials depthTest/depthWrite off at renderOrder -1000, so the
+  world always paints over it and it can never occlude the arena; fog off (the scene fogs out at 160 m) and the game's dome moved to -2000 so it stays behind
+- [x] Re-extracted egyptarena and outpost (the two with a sky_camera) plus columns; egyptarena's scene.json 5.0 -> 9.5 MB
+- [x] Verified: the editor's waterline view shows the sea and hills as the 2007 screenshot does; in the game 157k triangles drawn against 79k with the backdrop hidden; `test/skybox.test.ts`

@@ -8,7 +8,8 @@
 // these surfaces need no scene lighting at all; MeshBasicMaterial replays the
 // original bake exactly.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 type SceneMaterial = {
@@ -22,6 +23,8 @@ type BspScene = {
   lightmap: { file: string; width: number; height: number };
   materials: SceneMaterial[];
   groups: SceneGroup[];
+  /** the 3D skybox, relative to the map's sky_camera and already scaled; null or absent when the map has none */
+  sky?: { scale: number; radius: number; groups: SceneGroup[] } | null;
 };
 
 const cache = new Map<string, Promise<BspScene | null>>();
@@ -46,25 +49,39 @@ function load(mapId: string): Promise<BspScene | null> {
 
 export function BspWorld({ mapId, onLoaded }: { mapId: string; onLoaded?: (ok: boolean) => void }) {
   const [root, setRoot] = useState<THREE.Group | null>(null);
+  const sky = useRef<{ group: THREE.Group; radius: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    let built: { group: THREE.Group; dispose: () => void } | null = null;
+    let built: { group: THREE.Group; sky: { group: THREE.Group; radius: number } | null; dispose: () => void } | null = null;
 
     load(mapId).then((scene) => {
       if (!alive) return;
       if (!scene) { onLoaded?.(false); return; }
       built = build(scene, `/maps/${mapId}`);
+      sky.current = built.sky;
       setRoot(built.group);
       onLoaded?.(true);
     });
 
     return () => {
       alive = false;
+      sky.current = null;
       built?.dispose();
       setRoot(null);
     };
   }, [mapId, onLoaded]);
+
+  // The 3D skybox rides the eye: what you see of it is only its directions, so anchoring it
+  // on the camera gives the parallax of something a kilometre away, and a uniform scale about
+  // that anchor changes nothing on screen -- which is how it fits inside a 500 m far plane.
+  useFrame(({ camera }) => {
+    const s = sky.current;
+    if (!s) return;
+    s.group.position.copy(camera.position);
+    const far = (camera as THREE.PerspectiveCamera).far ?? 500;
+    s.group.scale.setScalar(s.radius > 0 ? Math.min(1, (far * 0.9) / s.radius) : 1);
+  });
 
   return root ? <primitive object={root} /> : null;
 }
@@ -120,10 +137,51 @@ function build(scene: BspScene, base: string) {
     meshes.push(mesh);
   }
 
+  // ---- the 3D skybox ---------------------------------------------------------------------
+  // Drawn first with no depth at all, so the world always paints over it and it can never
+  // occlude the arena however near a piece of it lands. Its triangles were sorted
+  // back-to-front from the anchor at extract time, which is what makes that safe.
+  let sky: { group: THREE.Group; radius: number } | null = null;
+  const skyMeshes: THREE.Mesh[] = [];
+  const skyMats: THREE.Material[] = [];
+  if (scene.sky?.groups?.length) {
+    const g0 = new THREE.Group();
+    g0.name = 'skybox';
+    g0.renderOrder = -1000;
+    for (const g of scene.sky.groups) {
+      if (scene.materials[g.material]?.kind === 'void') continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.normal, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
+      geo.setAttribute('uv1', new THREE.Float32BufferAttribute(g.uv2, 2));
+      geo.setIndex(g.idx);
+      const mat = (materials[g.material] as THREE.MeshBasicMaterial).clone();
+      mat.depthTest = false;
+      mat.depthWrite = false;
+      // a backdrop is not in the world's weather: the scene fogs out at 160 m and this
+      // sits at hundreds, so the world's fog would swallow it whole. Source fogs the
+      // skybox with the sky_camera's own settings, which this map disables.
+      mat.fog = false;
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = `sky:${scene.materials[g.material]?.name ?? g.material}`;
+      mesh.renderOrder = -1000;
+      mesh.frustumCulled = false;
+      g0.add(mesh);
+      skyMeshes.push(mesh);
+      skyMats.push(mat);
+    }
+    group.add(g0);
+    sky = { group: g0, radius: scene.sky.radius ?? 0 };
+  }
+
   return {
     group,
+    sky,
     dispose() {
       for (const m of meshes) m.geometry.dispose();
+      for (const m of skyMeshes) m.geometry.dispose();
+      for (const m of skyMats) m.dispose();
       for (const m of materials) { m.map?.dispose(); m.dispose(); }
       lightmap.dispose();
     },

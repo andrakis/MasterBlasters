@@ -55,6 +55,23 @@ const skyTest = makeSkyboxTest(ents);
 const toThree = (x, y, z) => [
   x * UNITS_TO_M - SHIFT[0], z * UNITS_TO_M - SHIFT[1], -y * UNITS_TO_M - SHIFT[2],
 ];
+// A direction is not a point: the playfield shift must not apply to normals.
+const dirToThree = (x, y, z) => [x * UNITS_TO_M, z * UNITS_TO_M, -y * UNITS_TO_M];
+
+// The 3D skybox. Its geometry is built at 1/scale somewhere else in the map, and the engine
+// draws it scaled up around the player -- a point `p` in the sky room appears at
+// `eye + (p - skyOrigin) * scale`. Emitting it RELATIVE to the sky camera and pre-scaled
+// leaves a renderer one job: keep the group on the camera. It is a directional backdrop, so
+// its triangles are sorted back-to-front here and drawn with no depth at all: the world
+// always paints over it, and it can never occlude the arena however near a piece of it is.
+const skyCam = ents.find((e) => e.classname === 'sky_camera' && e.origin);
+const SKY_ORIGIN = skyCam ? skyCam.origin.split(/\s+/).map(Number) : null;
+const SKY_SCALE = skyCam ? Number(skyCam.scale ?? skyCam.keys?.scale ?? 16) || 16 : 16;
+const SKY_UNITS = UNITS_TO_M * SKY_SCALE;
+const toSky = (x, y, z) => [
+  (x - SKY_ORIGIN[0]) * SKY_UNITS, (z - SKY_ORIGIN[2]) * SKY_UNITS, -(y - SKY_ORIGIN[1]) * SKY_UNITS,
+];
+const dirToSky = (x, y, z) => [x, z, -y];
 
 // ---------------------------------------------------------------- materials
 // TOOLS/* are editor-only surfaces (clip, trigger, nodraw, skip). They must not
@@ -180,9 +197,10 @@ for (let m = 1; m < models.length; m++)
   for (let i = models[m].firstface; i < models[m].firstface + models[m].numfaces; i++)
     if (i < faceOwner.length) faceOwner[i] = m;
 
-const groups = new Map(); // key `${model}:${matIndex}` -> buffers
+const groups = new Map();    // key `${model}:${matIndex}` -> buffers (the playfield)
+const skyGroups = new Map(); // the same, for the 3D skybox
 let skipped = { tool: 0, nodraw: 0, disp: 0, skybox: 0, degenerate: 0 };
-let dispFaces = 0, dispTris = 0;
+let dispFaces = 0, dispTris = 0, skyFaces = 0, skyDispFaces = 0;
 
 /**
  * A displacement contributes a grid, not a polygon fan. UVs still come from the
@@ -193,7 +211,7 @@ let dispFaces = 0, dispTris = 0;
  * Normals are accumulated from the triangles rather than taken from the face
  * plane, which is the whole point: a displaced surface is not flat.
  */
-function emitDisplacement(g, f, ti, td, rect, built) {
+function emitDisplacement(g, f, ti, td, rect, built, tf, dtf) {
   const { size, positions, indices } = built;
   const base = g.pos.length / 3;
   const nrm = new Float32Array(size * size * 3);
@@ -207,9 +225,9 @@ function emitDisplacement(g, f, ti, td, rect, built) {
   }
   for (let i = 0; i < size * size; i++) {
     const px = positions[i * 3], py = positions[i * 3 + 1], pz = positions[i * 3 + 2];
-    const [x, y, z] = toThree(px, py, pz);
+    const [x, y, z] = tf(px, py, pz);
     g.pos.push(x, y, z);
-    const [nx, ny, nz] = toThree(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]);
+    const [nx, ny, nz] = dtf(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]);
     const nl = Math.hypot(nx, ny, nz) || 1;
     g.normal.push(nx / nl, ny / nl, nz / nl);
     const tv = ti.textureVecs;
@@ -230,10 +248,9 @@ function emitDisplacement(g, f, ti, td, rect, built) {
     }
   }
   // toThree negates Y and so flips handedness; reverse winding to match
-  for (let t = 0; t < indices.length; t += 3) {
+  for (let t = 0; t < indices.length; t += 3)
     g.idx.push(base + indices[t], base + indices[t + 2], base + indices[t + 1]);
-    dispTris++;
-  }
+  return indices.length / 3;
 }
 
 for (let fi = 0; fi < faces.length; fi++) {
@@ -254,34 +271,38 @@ for (let fi = 0; fi < faces.length; fi++) {
     poly.push([verts[vi * 3], verts[vi * 3 + 1], verts[vi * 3 + 2]]);
   }
   if (poly.length < 3) { skipped.degenerate++; continue; }
-  if (skyTest) {
+  let inSky = false;
+  if (skyTest && SKY_ORIGIN) {
     let cx = 0, cy = 0, cz = 0;
     for (const p of poly) { cx += p[0]; cy += p[1]; cz += p[2]; }
-    if (skyTest(cx / poly.length, cy / poly.length, cz / poly.length)) { skipped.skybox++; continue; }
+    inSky = skyTest(cx / poly.length, cy / poly.length, cz / poly.length);
+    if (inSky) skyFaces++;
   }
+  const [tf, dtf] = inSky ? [toSky, dirToSky] : [toThree, dirToThree];
+  const into = inSky ? skyGroups : groups;
 
   const key = `${faceOwner[fi]}:${mat.index}`;
-  let g = groups.get(key);
-  if (!g) { g = { model: faceOwner[fi], material: mat.index, pos: [], uv: [], uv2: [], idx: [], normal: [] }; groups.set(key, g); }
+  let g = into.get(key);
+  if (!g) { g = { model: faceOwner[fi], material: mat.index, pos: [], uv: [], uv2: [], idx: [], normal: [] }; into.set(key, g); }
 
   if (f.dispinfo >= 0) {
     const built = buildDisplacement(dispInfos[f.dispinfo], poly, dispVerts);
     if (!built) { skipped.disp++; continue; }
-    emitDisplacement(g, f, ti, texdata[ti.texdata], lmRects[fi], built);
-    dispFaces++;
+    const n = emitDisplacement(g, f, ti, texdata[ti.texdata], lmRects[fi], built, tf, dtf);
+    if (inSky) skyDispFaces++; else { dispFaces++; dispTris += n; }
     continue;
   }
 
   const pl = planes[f.planenum];
   const nrm = f.side ? [-pl.n[0], -pl.n[1], -pl.n[2]] : pl.n;
-  const [nx, ny, nz] = toThree(nrm[0], nrm[1], nrm[2]);
+  const [nx, ny, nz] = dtf(nrm[0], nrm[1], nrm[2]);
   const nl = Math.hypot(nx, ny, nz) || 1;
 
   const td = texdata[ti.texdata];
   const rect = lmRects[fi];
   const base = g.pos.length / 3;
   for (const p of poly) {
-    const [x, y, z] = toThree(p[0], p[1], p[2]);
+    const [x, y, z] = tf(p[0], p[1], p[2]);
     g.pos.push(x, y, z);
     g.normal.push(nx / nl, ny / nl, nz / nl);
     const tv = ti.textureVecs;
@@ -304,6 +325,27 @@ for (let fi = 0; fi < faces.length; fi++) {
   }
   // fan-triangulate; Source faces are convex and wound clockwise from outside
   for (let i = 1; i < poly.length - 1; i++) g.idx.push(base, base + i + 1, base + i);
+}
+
+// ------------------------------------------------------- the 3D skybox payload
+// Painter's order, decided here rather than by a depth buffer at run time: the group is
+// always centred on the viewer, so "far from the anchor" is far from the eye whichever way
+// the camera looks, and a static back-to-front sort is right from every angle.
+let skyRadius = 0, skyTris = 0;
+const SKY_DP = 3;   // decimals the payload keeps; sort on THOSE, or the file comes out unsorted
+for (const g of skyGroups.values()) {
+  for (let i = 0; i < g.pos.length; i++) g.pos[i] = +g.pos[i].toFixed(SKY_DP);
+  const tri = [];
+  for (let t = 0; t < g.idx.length; t += 3) {
+    let far = 0;
+    for (const v of [g.idx[t], g.idx[t + 1], g.idx[t + 2]])
+      far = Math.max(far, Math.hypot(g.pos[v * 3], g.pos[v * 3 + 1], g.pos[v * 3 + 2]));
+    tri.push([far, g.idx[t], g.idx[t + 1], g.idx[t + 2]]);
+    skyRadius = Math.max(skyRadius, far);
+  }
+  tri.sort((a, b) => b[0] - a[0]);
+  g.idx = tri.flatMap(([, a, b, c]) => [a, b, c]);
+  skyTris += tri.length;
 }
 
 // ---------------------------------------------------------------- brushes
@@ -341,6 +383,22 @@ const out = {
   playfieldShift: SHIFT,
   lightmap: { file: 'lightmap.png', width: atlasW, height: atlasH, brightness: LM_BRIGHTNESS },
   displacements: { faces: dispFaces, tris: dispTris },
+  // the 3D skybox: vertices are RELATIVE to the sky camera and already scaled, so a renderer
+  // parents this to the camera and draws it first with no depth (see docs/TECH.md)
+  sky: SKY_ORIGIN ? {
+    scale: SKY_SCALE,
+    radius: +skyRadius.toFixed(2),
+    faces: skyFaces,
+    displacements: skyDispFaces,
+    groups: [...skyGroups.values()].map((g) => ({
+      model: g.model, material: g.material,
+      pos: g.pos,   // already rounded above, so the back-to-front order in `idx` is exact
+      normal: g.normal.map((v) => +v.toFixed(3)),
+      uv: g.uv.map((v) => +v.toFixed(5)),
+      uv2: g.uv2.map((v) => +v.toFixed(6)),
+      idx: g.idx,
+    })),
+  } : null,
   materials: [...materials.values()].map((m) => ({
     name: m.name, file: m.file, width: m.width, height: m.height,
     transparent: m.transparent, tool: m.tool, stock: m.stock, missing: m.missing,
@@ -371,5 +429,6 @@ console.log(`  materials: ${materials.size} (${[...materials.values()].filter((m
 console.log(`  lightmap atlas: ${atlasW}x${atlasH}  (${order.length}/${faces.length} faces lit)`);
 console.log(`  brushes: ${brushes.length}  entities: ${entities.length}`);
 console.log(`  displacements: ${dispFaces} faces -> ${dispTris} tris`);
+if (out.sky) console.log(`  3D skybox: ${skyFaces} faces (${skyDispFaces} displacements) -> ${skyTris} tris in ${out.sky.groups.length} groups, scale ${SKY_SCALE}, radius ${skyRadius.toFixed(0)} m`);
 console.log(`  skipped: ${JSON.stringify(skipped)}`);
 console.log(`  bounds (m): ` + bounds.map(([lo, hi], i) => `${'xyz'[i]} ${lo.toFixed(1)}..${hi.toFixed(1)} (${(hi - lo).toFixed(1)})`).join('  '));
