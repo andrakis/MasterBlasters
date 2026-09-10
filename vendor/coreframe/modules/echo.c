@@ -1,6 +1,8 @@
 // echo.c -- the smallest module: every frame comes back with its type | 256
 // and each payload word + 1. The runtime's own tests and the throughput
-// figure use it. Build: cf_mbox.h echo.c cf_main.c (or cf_native.c echo.c cf_native_main.c).
+// figure use it. Link: echo.c + cf_mbox.c cf_sha256.c cf_main.c (board), or
+// echo.c + cf_native.c (native), or echo.c + cf_kmain.c (C4KE).
+#include "cf.h"
 
 int echo_buf[64];
 

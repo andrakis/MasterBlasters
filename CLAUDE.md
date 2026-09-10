@@ -89,7 +89,7 @@ lockstep. `simClient.ts` runs one of three roles: `local` (worker only), `host`
 src/config.ts          CFG/TUNING/WEAPONS/AI_TIERS/STRIDE — all tuning
 src/math.ts            seeded PRNG streams (seeds from the rules VM), hash helpers
 src/rules/             THE RULES VM: frames.json (schema) → frames.h/.ts (generated),
-                       mb_rules_core.c (the authority, c4 dialect), rules.ts (the seam),
+                       mb_rules_core.c (the authority, c4lc's C99 subset), rules.ts (the seam),
                        vmRules.ts (boots vendor/coreframe on public/coreframe/mb_rules.c4r)
 vendor/coreframe/      the CoreFrame runtime, vendored verbatim (CoreFrame/tools/sync-to.sh)
 tools/build-rules.sh   C → mb_rules.c4r (shipped) + the native twin (parity test)

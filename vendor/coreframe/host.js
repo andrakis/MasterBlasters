@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/host.js @ b89a635 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/host.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // host.js - the in-thread host: one persistent machine, the mailbox, and
 // "run until the guest says idle". Plain ESM; works in a page, a worker,
 // and node alike (node/host.js adds file loading, worker.js the thread).

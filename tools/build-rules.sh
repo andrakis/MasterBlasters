@@ -26,7 +26,7 @@ sign_image () {   # sign in place when RELEASE_KEY names the private key
 }
 if [ -n "$RELEASE_SEED" ]; then
   tmp=$(mktemp -d)
-  "$CF/tools/build-module.sh" "$tmp/mb_rules.c4r" "$M/cf_mbox.h" "$R/frames.h" "$R/mb_rules_core.c" "$M/cf_main.c"
+  "$CF/tools/build-module.sh" "$tmp/mb_rules.c4r" "$R/mb_rules_core.c" "$M/cf_mbox.c" "$M/cf_sha256.c" "$M/cf_main.c"
   "$CF/tools/permute-release.sh" "$RELEASE_SEED" "$P" "$here/vendor/coreframe/fw/fw.c4r" "$tmp/mb_rules.c4r"
   rm -rf "$tmp"
   echo "build-rules: public/coreframe permuted with seed $RELEASE_SEED (opnames.rom)"
@@ -34,12 +34,11 @@ if [ -n "$RELEASE_SEED" ]; then
 else
   cp "$here/vendor/coreframe/fw/fw.c4r" "$P/fw.c4r"
   rm -f "$P/opnames.rom"
-  "$CF/tools/build-module.sh" "$P/mb_rules.c4r" "$M/cf_mbox.h" "$R/frames.h" "$R/mb_rules_core.c" "$M/cf_main.c"
+  "$CF/tools/build-module.sh" "$P/mb_rules.c4r" "$R/mb_rules_core.c" "$M/cf_mbox.c" "$M/cf_sha256.c" "$M/cf_main.c"
   echo "build-rules: public/coreframe stock encoding"
   sign_image "$P/fw.c4r"; sign_image "$P/mb_rules.c4r"
 fi
-# the native twin last: the shipped module above is compiled first, so a compiler
-# error maps to the source order the editor's build target lists
-"$CF/tools/build-module.sh" "$here/test/fixtures/mb_rules_native.c4r" "$M/cf_native.c" "$R/frames.h" "$R/mb_rules_core.c" "$M/cf_native_main.c"
+# the native twin last: the same rules unit against the parity harness
+"$CF/tools/build-module.sh" "$here/test/fixtures/mb_rules_native.c4r" "$R/mb_rules_core.c" "$M/cf_native.c"
 [ -n "$RELEASE_KEY" ] && echo "build-rules: images signed with $RELEASE_KEY"
 exit 0

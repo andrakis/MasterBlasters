@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/sim/machine.js @ b89a635 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/sim/machine.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // ported from c4/src/c4bb/sim/machine.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // machine.js - the c4bb CPU: registers, microstep engine, dispatch.
 //

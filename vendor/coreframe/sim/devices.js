@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/sim/devices.js @ b89a635 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/sim/devices.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // ported from c4/src/c4bb/sim/devices.js @ 90fa9e6 — verbatim; c4bb is the behavioural oracle. Re-sync: tools/sync-sim.sh
 // devices.js - memory-mapped peripherals of the c4bb machine.
 //

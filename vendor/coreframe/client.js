@@ -1,4 +1,4 @@
-// vendored from CoreFrame/runtime/client.js @ b89a635 -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
+// vendored from CoreFrame/runtime/client.js @ fcb900b -- verbatim; re-sync with CoreFrame/tools/sync-to.sh
 // client.js - the page's side of the worker host: the same send/receive shape
 // as host.js, but the machine runs on another thread and a call never blocks.
 //

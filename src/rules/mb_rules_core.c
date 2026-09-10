@@ -4,11 +4,14 @@
 // spawn slots, KO credit, lives, round results, sudden death and match
 // wins; the game's World adopts what comes back and computes none of it.
 //
-// c4 dialect (c4cc): no structs, locals at the top of each function, no
-// preprocessor, `//` comments. Every intermediate is a 32-bit int on both
-// hosts (c4bb and native c4m32), so the arithmetic below wraps identically.
+// Written in c4lc's C99 subset (vendor/coreframe: docs/build.md lists what it
+// takes). Every intermediate is a 32-bit int on both hosts (c4bb and native
+// c4m32), so the arithmetic below wraps identically.
 //
-// The same source runs under the native harness (cf_native.c) for parity.
+// One unit: it links against cf_main.c (the board) or cf_native.c (the
+// parity harness) unchanged.
+#include "cf.h"
+#include "frames.h"
 
 enum { MAXP = 8, MAXT = 8 };
 enum { R_CONTINUE = 0, R_WINNER = 1, R_DRAW = 2 };

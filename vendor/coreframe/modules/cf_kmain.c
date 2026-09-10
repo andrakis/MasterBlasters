@@ -1,5 +1,17 @@
-// cf_kmain.c -- the resident loop under C4KE: bind to the host mailbox, await
-// frames in the kernel (no spin), hand each to the module, stop on type 0.
+// cf_kmain.c -- the resident loop UNDER C4KE: bind to the host mailbox through
+// the kernel's mailbox extension, await frames in the kernel (no spin), hand
+// each to the module, stop on type 0. No u0.h: that runtime is c4cc's (its
+// varargs macros never expand under c4lc) and a resident module needs none of
+// it -- __c4_opcode is a compiler builtin, and OP_REQUEST_SYMBOL is u0.h:31's
+// constant. c4ke_mbox.h names the mailbox opcodes (from the c4 checkout's
+// include/, vendored beside this file). Link: <module units> cf_kmain.c
+enum { OP_REQUEST_SYMBOL = 128 };
+#include "c4ke_mbox.h"
+#include "cf.h"
+
+void cf_emit (int type, int *payload, int n) {
+	if (!mbox_send(type, payload, n)) printf("cf: outbox full (type %d)\n", type);
+}
 
 int main (int argc, char **argv) {
 	int buf[80], n;
