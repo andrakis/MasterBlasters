@@ -1,9 +1,16 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { attachSignaling } from './signaling.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Name the process so `top`/`ps` say 'masterblasters' instead of Node's "node-MainThread".
+// process.title rewrites argv (what `ps aux` shows); /proc/self/comm is the kernel
+// thread name `top` shows, 15 chars max. Not Linux: nothing to write, no harm done.
+process.title = 'masterblasters';
+try { writeFileSync('/proc/self/comm', 'masterblasters'); } catch {}
 
 // Load .env from the project root if present. Optional — PORT can also come from
 // the shell environment, and falls back to the default below if neither is set.
