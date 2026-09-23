@@ -1,6 +1,6 @@
 # MASTER BLASTERS
 
-A remake of the 2007 Half-Life 2 mod, rebuilt for the browser. Quake's rocket-launcher
+A remake of the 2007 Half-Life 2 mod ([original files archived here](https://github.com/andrakis/masterblasters_hl2)), rebuilt for the browser. Quake's rocket-launcher
 violence crossed with Super Smash Bros' death condition: the maps are floating
 platforms over a bottomless void, and **damage never kills** — health only decides how
 far the next hit sends you. Knock everyone off the platforms while your jetpack, a
